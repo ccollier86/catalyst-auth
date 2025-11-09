@@ -1,0 +1,111 @@
+import { ok, type CatalystError, type EntitlementRecord, type Result } from "@catalyst-auth/contracts";
+import { z } from "../vendor/zod.js";
+
+import type { CatalystSdkDependencies } from "../index.js";
+import { createValidationError } from "../shared/errors.js";
+import { safeParse } from "../shared/validation.js";
+
+const subjectSchema = z.object({
+  kind: z.enum(["user", "org", "membership"]),
+  id: z.string().min(1),
+});
+
+const entitlementRecordSchema: z.ZodType<EntitlementRecord> = z.object({
+  id: z.string().min(1),
+  subjectKind: z.enum(["user", "org", "membership"]),
+  subjectId: z.string().min(1),
+  entitlement: z.string().min(1),
+  createdAt: z.string().min(1),
+  metadata: z
+    .record(z.union([z.string(), z.number(), z.boolean()]))
+    .optional(),
+});
+
+const listEntitlementsSchema = z.object({
+  subject: subjectSchema,
+});
+
+const listEntitlementsForSubjectsSchema = z.object({
+  subjects: z.array(subjectSchema).min(1),
+});
+
+const upsertEntitlementSchema = z.object({
+  entitlement: entitlementRecordSchema,
+});
+
+const removeEntitlementSchema = z.object({
+  id: z.string().min(1),
+});
+
+export interface EntitlementsModule {
+  readonly listEntitlements: (
+    input: z.infer<typeof listEntitlementsSchema>,
+  ) => Promise<Result<ReadonlyArray<EntitlementRecord>, CatalystError>>;
+  readonly listEntitlementsForSubjects: (
+    input: z.infer<typeof listEntitlementsForSubjectsSchema>,
+  ) => Promise<Result<ReadonlyArray<EntitlementRecord>, CatalystError>>;
+  readonly upsertEntitlement: (
+    input: z.infer<typeof upsertEntitlementSchema>,
+  ) => Promise<Result<EntitlementRecord, CatalystError>>;
+  readonly removeEntitlement: (
+    input: z.infer<typeof removeEntitlementSchema>,
+  ) => Promise<Result<null, CatalystError>>;
+}
+
+const createListEntitlements = (
+  deps: CatalystSdkDependencies,
+): EntitlementsModule["listEntitlements"] => async (input) => {
+  const parsed = safeParse(listEntitlementsSchema, input, createValidationError);
+  if (!parsed.ok) {
+    return parsed;
+  }
+  const records = await deps.entitlementStore.listEntitlements({
+    subjectKind: parsed.value.subject.kind,
+    subjectId: parsed.value.subject.id,
+  });
+  return ok(records);
+};
+
+const createListEntitlementsForSubjects = (
+  deps: CatalystSdkDependencies,
+): EntitlementsModule["listEntitlementsForSubjects"] => async (input) => {
+  const parsed = safeParse(listEntitlementsForSubjectsSchema, input, createValidationError);
+  if (!parsed.ok) {
+    return parsed;
+  }
+  const subjects = parsed.value.subjects.map((subject) => ({
+    subjectKind: subject.kind,
+    subjectId: subject.id,
+  }));
+  const records = await deps.entitlementStore.listEntitlementsForSubjects(subjects);
+  return ok(records);
+};
+
+const createUpsertEntitlement = (
+  deps: CatalystSdkDependencies,
+): EntitlementsModule["upsertEntitlement"] => async (input) => {
+  const parsed = safeParse(upsertEntitlementSchema, input, createValidationError);
+  if (!parsed.ok) {
+    return parsed;
+  }
+  const record = await deps.entitlementStore.upsertEntitlement(parsed.value.entitlement);
+  return ok(record);
+};
+
+const createRemoveEntitlement = (
+  deps: CatalystSdkDependencies,
+): EntitlementsModule["removeEntitlement"] => async (input) => {
+  const parsed = safeParse(removeEntitlementSchema, input, createValidationError);
+  if (!parsed.ok) {
+    return parsed;
+  }
+  await deps.entitlementStore.removeEntitlement(parsed.value.id);
+  return ok(null);
+};
+
+export const createEntitlementsModule = (deps: CatalystSdkDependencies): EntitlementsModule => ({
+  listEntitlements: createListEntitlements(deps),
+  listEntitlementsForSubjects: createListEntitlementsForSubjects(deps),
+  upsertEntitlement: createUpsertEntitlement(deps),
+  removeEntitlement: createRemoveEntitlement(deps),
+});
