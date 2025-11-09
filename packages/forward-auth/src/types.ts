@@ -1,4 +1,9 @@
-import type { CachePort, KeyStorePort, ResourceDescriptor, EffectiveIdentity } from "@catalyst-auth/contracts";
+import type {
+  CachePort,
+  KeyStorePort,
+  ResourceDescriptor,
+  EffectiveIdentity,
+} from "@catalyst-auth/contracts";
 
 export interface DecisionCacheEntry {
   readonly headers: Record<string, string>;
@@ -41,5 +46,25 @@ export interface ForwardAuthConfig {
   readonly buildEnvironment?: (
     request: ForwardAuthRequest,
     identity: EffectiveIdentity,
+  ) => Record<string, unknown> | undefined;
+}
+
+export interface ForwardAuthHandlerContext {
+  readonly request: Request;
+  readonly url: URL;
+  readonly headers: Record<string, string>;
+}
+
+export interface ForwardAuthFetchHandlerOptions {
+  readonly forwardedMethodHeader?: string;
+  readonly forwardedUriHeader?: string;
+  readonly forwardedHostHeader?: string;
+  readonly forwardedProtoHeader?: string;
+  readonly orgHeader?: string;
+  readonly environmentHeaderPrefix?: string;
+  readonly buildResource?: (context: ForwardAuthHandlerContext) => ResourceDescriptor | undefined;
+  readonly buildAction?: (context: ForwardAuthHandlerContext) => string | undefined;
+  readonly buildEnvironment?: (
+    context: ForwardAuthHandlerContext,
   ) => Record<string, unknown> | undefined;
 }
