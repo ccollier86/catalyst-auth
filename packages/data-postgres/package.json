@@ -1,5 +1,5 @@
 {
-  "name": "@catalyst-auth/forward-auth",
+  "name": "@catalyst-auth/data-postgres",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -9,11 +9,10 @@
   ],
   "scripts": {
     "build": "tsc -b tsconfig.json",
-    "lint": "echo 'No lint configured for @catalyst-auth/forward-auth'",
+    "lint": "echo 'No lint configured for @catalyst-auth/data-postgres'",
     "test": "node ../../scripts/link-workspace-packages.mjs && node --test ./test/**/*.test.js"
   },
   "dependencies": {
-    "@catalyst-auth/contracts": "^0.1.0",
-    "@catalyst-auth/data-postgres": "^0.1.0"
+    "@catalyst-auth/contracts": "^0.1.0"
   }
 }

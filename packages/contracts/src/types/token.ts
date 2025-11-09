@@ -5,6 +5,12 @@ export interface JwtDescriptor {
   readonly expiresAt: string;
 }
 
+export interface TokenPair {
+  readonly accessToken: string;
+  readonly refreshToken: string;
+  readonly expiresAt: string;
+}
+
 export interface DecisionResourceClaims {
   readonly type?: string;
   readonly id?: string;
@@ -38,4 +44,23 @@ export interface MintDecisionJwtInput {
   readonly environment?: Record<string, unknown>;
   readonly audience?: string | ReadonlyArray<string>;
   readonly ttlSeconds?: number;
+}
+
+export interface MintAccessTokenInput {
+  readonly subject: string;
+  readonly clientId: string;
+  readonly scopes: ReadonlyArray<string>;
+  readonly orgId?: string;
+  readonly sessionId?: string;
+  readonly audience?: string | ReadonlyArray<string>;
+  readonly ttlSeconds?: number;
+  readonly metadata?: Record<string, unknown>;
+}
+
+export interface MintRefreshTokenInput {
+  readonly subject: string;
+  readonly clientId: string;
+  readonly sessionId?: string;
+  readonly ttlSeconds?: number;
+  readonly metadata?: Record<string, unknown>;
 }

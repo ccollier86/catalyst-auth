@@ -13,6 +13,7 @@
     "test": "node ../../scripts/link-workspace-packages.mjs && node --test ./test/**/*.test.js"
   },
   "dependencies": {
-    "@catalyst-auth/contracts": "^0.1.0"
+    "@catalyst-auth/contracts": "^0.1.0",
+    "@catalyst-auth/jwt-service": "^0.1.0"
   }
 }

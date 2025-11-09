@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert";
 
+import { createTestPostgresDataSource } from "@catalyst-auth/data-postgres";
 import { ForwardAuthService, defaultHashApiKey } from "@catalyst-auth/forward-auth";
 
 const ok = (value) => ({ ok: true, value });
@@ -22,6 +23,7 @@ const createCacheStub = () => {
 };
 
 test("allows requests with valid access tokens and caches decision JWTs", async () => {
+  const dataSource = await createTestPostgresDataSource();
   const cache = createCacheStub();
   let validationCalls = 0;
 
@@ -64,7 +66,7 @@ test("allows requests with valid access tokens and caches decision JWTs", async 
 
   const service = new ForwardAuthService(
     { idp, policyEngine },
-    { decisionCache: cache, decisionCacheTtlSeconds: 30 },
+    { decisionCache: cache, decisionCacheTtlSeconds: 30, auditLog: dataSource.auditLog },
   );
 
   const response = await service.handle({
@@ -85,6 +87,12 @@ test("allows requests with valid access tokens and caches decision JWTs", async 
 
   const cachedEntry = await cache.get("forward-auth:decision:decision.jwt");
   assert.ok(cachedEntry, "decision JWT should be cached");
+
+  const auditEvents = dataSource.listAuditEvents();
+  assert.strictEqual(auditEvents.length, 1, "audit event should be recorded for cached decision");
+  assert.strictEqual(auditEvents[0].action, "decision_cached");
+  assert.strictEqual(auditEvents[0].resource?.id, "decision.jwt");
+  assert.deepEqual(auditEvents[0].metadata?.groups, ["engineering"]);
 
   const cachedResponse = await service.handle({
     method: "get",
@@ -163,20 +171,28 @@ test("returns forbidden when policy denies", async () => {
 });
 
 test("exchanges API keys for merged identities and records usage", async () => {
-  const usedAt = [];
+  const dataSource = await createTestPostgresDataSource();
   const keySecret = "key-secret";
   const hash = defaultHashApiKey(keySecret);
-  const keyRecord = {
-    id: "key-1",
-    hash,
-    owner: { kind: "user", id: "user-55" },
-    status: "active",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    usageCount: 0,
-    scopes: ["read"],
-    labels: { tier: "gold" },
-  };
+  const nowIso = new Date().toISOString();
+  await dataSource.seed({
+    keys: [
+      {
+        id: "key-1",
+        hash,
+        owner: { kind: "user", id: "user-55" },
+        name: "Test key",
+        description: "",
+        createdBy: { kind: "system", id: "seed" },
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        usageCount: 0,
+        status: "active",
+        scopes: ["read"],
+        labels: { tier: "gold" },
+      },
+    ],
+  });
 
   const idp = {
     async validateAccessToken() {
@@ -203,20 +219,9 @@ test("exchanges API keys for merged identities and records usage", async () => {
     },
   };
 
-  const keyStore = {
-    async getKeyByHash(candidate) {
-      assert.strictEqual(candidate, hash);
-      return ok(keyRecord);
-    },
-    async recordKeyUsage(id, { usedAt: timestamp }) {
-      usedAt.push({ id, timestamp });
-      return ok({ ...keyRecord, usageCount: keyRecord.usageCount + 1, lastUsedAt: timestamp });
-    },
-  };
-
   const service = new ForwardAuthService(
     { idp, policyEngine },
-    { keyStore, hashApiKey: defaultHashApiKey },
+    { keyStore: dataSource.keyStore, hashApiKey: defaultHashApiKey },
   );
 
   const response = await service.handle({
@@ -233,7 +238,10 @@ test("exchanges API keys for merged identities and records usage", async () => {
   assert.strictEqual(JSON.parse(response.headers["x-user-labels"]).tier, "gold");
   assert.ok(response.headers["x-user-scopes"].includes("base"));
   assert.ok(response.headers["x-user-scopes"].includes("read"));
-  assert.strictEqual(usedAt.length, 1, "key usage should be recorded");
+  const updatedKeyResult = await dataSource.keyStore.getKeyById("key-1");
+  assert.ok(updatedKeyResult.ok);
+  assert.strictEqual(updatedKeyResult.value?.usageCount, 1, "key usage should be recorded");
+  assert.ok(updatedKeyResult.value?.lastUsedAt, "lastUsedAt should be set when key is used");
 });
 
 test("returns unauthorized when API key not found", async () => {
@@ -251,19 +259,11 @@ test("returns unauthorized when API key not found", async () => {
       throw new Error("should not evaluate policy when key is invalid");
     },
   };
-
-  const keyStore = {
-    async getKeyByHash() {
-      return ok(undefined);
-    },
-    async recordKeyUsage() {
-      throw new Error("should not record usage for missing keys");
-    },
-  };
+  const dataSource = await createTestPostgresDataSource();
 
   const service = new ForwardAuthService(
     { idp, policyEngine },
-    { keyStore, hashApiKey: defaultHashApiKey },
+    { keyStore: dataSource.keyStore, hashApiKey: defaultHashApiKey },
   );
 
   const response = await service.handle({
