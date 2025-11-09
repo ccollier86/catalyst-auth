@@ -26,6 +26,9 @@
       "@catalyst-auth/contracts": [
         "packages/contracts/src/index.ts"
       ],
+      "@catalyst-auth/data-postgres": [
+        "packages/data-postgres/src/index.ts"
+      ],
       "@catalyst-auth/forward-auth": [
         "packages/forward-auth/src/index.ts"
       ],
