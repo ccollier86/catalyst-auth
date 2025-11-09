@@ -5,7 +5,8 @@
   "scripts": {
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
-    "test": "pnpm -r test"
+    "test": "pnpm -r test",
+    "sort:paths": "node scripts/sort-tsconfig-paths.mjs"
   },
   "devDependencies": {
     "typescript": "^5.4.5"
