@@ -5,7 +5,7 @@ import type {
   LabelSet,
 } from "@catalyst-auth/contracts";
 
-import type { PostgresTableNames } from "../postgres-data-source.js";
+import type { PostgresTableNames } from "../tables.js";
 import type { QueryExecutor } from "../executors/query-executor.js";
 type EntitlementTables = Pick<PostgresTableNames, "entitlements">;
 

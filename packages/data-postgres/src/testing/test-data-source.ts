@@ -9,24 +9,10 @@ import type { QueryExecutor } from "../executors/query-executor.js";
 import {
   createPostgresDataSource,
   type PostgresDataSource,
-  type PostgresTableNames,
 } from "../postgres-data-source.js";
 import { postgresMigrations } from "../migrations/index.js";
 import { seedPostgresDataSource, type PostgresSeedData } from "../seeding/seed.js";
-import { createFallbackHarness } from "./fallback-query-executor.js";
-
-const defaultTables: PostgresTableNames = {
-  users: "auth_users",
-  orgs: "auth_orgs",
-  groups: "auth_groups",
-  memberships: "auth_memberships",
-  entitlements: "auth_entitlements",
-  sessions: "auth_sessions",
-  keys: "auth_keys",
-  auditEvents: "auth_audit_events",
-  webhookSubscriptions: "auth_webhook_subscriptions",
-  webhookDeliveries: "auth_webhook_deliveries",
-};
+import { resolvePostgresTableNames, type PostgresTableNames } from "../tables.js";
 
 const migrationsDir = dirname(fileURLToPath(new URL("../migrations/", import.meta.url)));
 
@@ -42,13 +28,13 @@ export interface TestPostgresDataSource extends PostgresDataSource {
   listAuditEvents(): Promise<ReadonlyArray<AuditEventRecord>>;
 }
 
-interface TestExecutorResult {
+const createPgMemExecutor = async (
+  tables: PostgresTableNames,
+): Promise<{
   readonly executor: QueryExecutor;
   readonly dispose: () => Promise<void>;
   readonly listAuditEvents: () => Promise<ReadonlyArray<AuditEventRecord>>;
-}
-
-const createPgMemExecutor = async (tables: PostgresTableNames): Promise<TestExecutorResult> => {
+}> => {
   const { newDb } = await import("pg-mem");
   const db = newDb({ autoCreateForeignKeyIndices: true });
   await runMigrations(db);
@@ -76,29 +62,12 @@ const createPgMemExecutor = async (tables: PostgresTableNames): Promise<TestExec
   return { executor, dispose: () => pool.end(), listAuditEvents };
 };
 
-const createFallbackExecutor = (tables: PostgresTableNames): TestExecutorResult => {
-  const harness = createFallbackHarness(tables);
-  return {
-    executor: harness.executor,
-    dispose: async () => {},
-    listAuditEvents: async () => harness.listAuditEvents(),
-  };
-};
-
 export const createTestPostgresDataSource = async (
   seed?: PostgresSeedData,
 ): Promise<TestPostgresDataSource> => {
-  const tables: PostgresTableNames = { ...defaultTables };
+  const tables: PostgresTableNames = resolvePostgresTableNames();
 
-  let executorResult: TestExecutorResult;
-  try {
-    executorResult = await createPgMemExecutor(tables);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ERR_MODULE_NOT_FOUND") {
-      throw error;
-    }
-    executorResult = createFallbackExecutor(tables);
-  }
+  const executorResult = await createPgMemExecutor(tables);
 
   const dataSource = createPostgresDataSource({ executor: executorResult.executor, tables });
   if (seed) {

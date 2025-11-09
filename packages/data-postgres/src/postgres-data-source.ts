@@ -4,6 +4,8 @@ import type {
   KeyStorePort,
   ProfileStorePort,
   SessionStorePort,
+  WebhookDeliveryStorePort,
+  WebhookSubscriptionStorePort,
 } from "@catalyst-auth/contracts";
 import type { Pool } from "pg";
 
@@ -14,33 +16,12 @@ import { createPostgresEntitlementStore } from "./repositories/entitlement-repos
 import { createPostgresKeyStore } from "./repositories/key-repository.js";
 import { createPostgresProfileStore } from "./repositories/profile-repository.js";
 import { createPostgresSessionStore } from "./repositories/session-repository.js";
+import {
+  createPostgresWebhookDeliveryStore,
+  createPostgresWebhookSubscriptionStore,
+} from "./repositories/webhook-repository.js";
 import { PostgresTransactionManager } from "./transactions/transaction-manager.js";
-
-export interface PostgresTableNames {
-  readonly users: string;
-  readonly orgs: string;
-  readonly groups: string;
-  readonly memberships: string;
-  readonly entitlements: string;
-  readonly sessions: string;
-  readonly keys: string;
-  readonly auditEvents: string;
-  readonly webhookSubscriptions: string;
-  readonly webhookDeliveries: string;
-}
-
-const defaultTables: PostgresTableNames = {
-  users: "auth_users",
-  orgs: "auth_orgs",
-  groups: "auth_groups",
-  memberships: "auth_memberships",
-  entitlements: "auth_entitlements",
-  sessions: "auth_sessions",
-  keys: "auth_keys",
-  auditEvents: "auth_audit_events",
-  webhookSubscriptions: "auth_webhook_subscriptions",
-  webhookDeliveries: "auth_webhook_deliveries",
-};
+import { resolvePostgresTableNames, type PostgresTableNames } from "./tables.js";
 
 export interface PostgresDataSource {
   readonly executor: QueryExecutor;
@@ -50,6 +31,8 @@ export interface PostgresDataSource {
   readonly keyStore: KeyStorePort;
   readonly auditLog: AuditLogPort;
   readonly sessionStore: SessionStorePort;
+  readonly webhookSubscriptionStore: WebhookSubscriptionStorePort;
+  readonly webhookDeliveryStore: WebhookDeliveryStorePort;
   readonly transactionManager: PostgresTransactionManager;
 }
 
@@ -62,11 +45,15 @@ export interface CreatePostgresDataSourceOptions {
 export const createPostgresDataSource = (
   options: CreatePostgresDataSourceOptions,
 ): PostgresDataSource => {
-  const tables: PostgresTableNames = { ...defaultTables, ...(options.tables ?? {}) };
-  const executor = options.executor ?? (options.pool ? createPgQueryExecutor(options.pool) : undefined);
+  const tables = resolvePostgresTableNames(options.tables);
+  let executor = options.executor;
+
+  if (!executor && options.pool) {
+    executor = createPgQueryExecutor(options.pool);
+  }
 
   if (!executor) {
-    throw new Error("createPostgresDataSource requires a pool or executor");
+    throw new Error("createPostgresDataSource requires a pool or query executor");
   }
 
   const entitlementStore = createPostgresEntitlementStore(executor, { tables });
@@ -74,6 +61,8 @@ export const createPostgresDataSource = (
   const keyStore = createPostgresKeyStore(executor, { tables });
   const auditLog = createPostgresAuditLog(executor, { tables });
   const sessionStore = createPostgresSessionStore(executor, { tables });
+  const webhookSubscriptionStore = createPostgresWebhookSubscriptionStore(executor, { tables });
+  const webhookDeliveryStore = createPostgresWebhookDeliveryStore(executor, { tables });
   const transactionManager = new PostgresTransactionManager({ pool: options.pool, executor });
 
   return {
@@ -84,6 +73,8 @@ export const createPostgresDataSource = (
     keyStore,
     auditLog,
     sessionStore,
+    webhookSubscriptionStore,
+    webhookDeliveryStore,
     transactionManager,
   };
 };

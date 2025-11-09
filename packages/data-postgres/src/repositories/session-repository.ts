@@ -4,7 +4,7 @@ import type {
   SessionTouchUpdate,
 } from "@catalyst-auth/contracts";
 
-import type { PostgresTableNames } from "../postgres-data-source.js";
+import type { PostgresTableNames } from "../tables.js";
 import type { QueryExecutor } from "../executors/query-executor.js";
 import { clone } from "../utils/clone.js";
 

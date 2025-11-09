@@ -7,6 +7,8 @@ import type {
   OrgProfileRecord,
   SessionRecord,
   UserProfileRecord,
+  WebhookDeliveryRecord,
+  WebhookSubscriptionRecord,
 } from "@catalyst-auth/contracts";
 
 import type { PostgresDataSource } from "../postgres-data-source.js";
@@ -20,6 +22,8 @@ export interface PostgresSeedData {
   readonly sessions?: ReadonlyArray<SessionRecord>;
   readonly keys?: ReadonlyArray<KeyRecord>;
   readonly auditEvents?: ReadonlyArray<AuditEventRecord>;
+  readonly webhookSubscriptions?: ReadonlyArray<WebhookSubscriptionRecord>;
+  readonly webhookDeliveries?: ReadonlyArray<WebhookDeliveryRecord>;
 }
 
 export const seedPostgresDataSource = async (
@@ -158,6 +162,97 @@ export const seedPostgresDataSource = async (
         event.resource ?? null,
         event.metadata ?? null,
         event.correlationId ?? null,
+      ],
+    );
+  }
+
+  for (const subscription of seed.webhookSubscriptions ?? []) {
+    await dataSource.executor.query(
+      `INSERT INTO ${dataSource.tables.webhookSubscriptions} (
+        id,
+        org_id,
+        event_types,
+        target_url,
+        secret,
+        headers,
+        retry_policy,
+        active,
+        created_at,
+        updated_at,
+        metadata
+      ) VALUES (
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11
+      )
+      ON CONFLICT (id) DO UPDATE SET
+        org_id = EXCLUDED.org_id,
+        event_types = EXCLUDED.event_types,
+        target_url = EXCLUDED.target_url,
+        secret = EXCLUDED.secret,
+        headers = EXCLUDED.headers,
+        retry_policy = EXCLUDED.retry_policy,
+        active = EXCLUDED.active,
+        created_at = EXCLUDED.created_at,
+        updated_at = EXCLUDED.updated_at,
+        metadata = EXCLUDED.metadata`,
+      [
+        subscription.id,
+        subscription.orgId ?? null,
+        subscription.eventTypes,
+        subscription.targetUrl,
+        subscription.secret,
+        subscription.headers ?? {},
+        subscription.retryPolicy ?? null,
+        subscription.active,
+        subscription.createdAt,
+        subscription.updatedAt,
+        subscription.metadata ?? null,
+      ],
+    );
+  }
+
+  for (const delivery of seed.webhookDeliveries ?? []) {
+    await dataSource.executor.query(
+      `INSERT INTO ${dataSource.tables.webhookDeliveries} (
+        id,
+        subscription_id,
+        event_id,
+        status,
+        attempt_count,
+        last_attempt_at,
+        next_attempt_at,
+        payload,
+        response,
+        error_message,
+        created_at,
+        updated_at
+      ) VALUES (
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12
+      )
+      ON CONFLICT (id) DO UPDATE SET
+        subscription_id = EXCLUDED.subscription_id,
+        event_id = EXCLUDED.event_id,
+        status = EXCLUDED.status,
+        attempt_count = EXCLUDED.attempt_count,
+        last_attempt_at = EXCLUDED.last_attempt_at,
+        next_attempt_at = EXCLUDED.next_attempt_at,
+        payload = EXCLUDED.payload,
+        response = EXCLUDED.response,
+        error_message = EXCLUDED.error_message,
+        created_at = EXCLUDED.created_at,
+        updated_at = EXCLUDED.updated_at`,
+      [
+        delivery.id,
+        delivery.subscriptionId,
+        delivery.eventId,
+        delivery.status,
+        delivery.attemptCount,
+        delivery.lastAttemptAt ?? null,
+        delivery.nextAttemptAt ?? null,
+        delivery.payload,
+        delivery.response ?? null,
+        delivery.errorMessage ?? null,
+        delivery.createdAt,
+        delivery.updatedAt,
       ],
     );
   }
