@@ -21,32 +21,11 @@ import {
   createPostgresWebhookSubscriptionStore,
 } from "./repositories/webhook-repository.js";
 import { PostgresTransactionManager } from "./transactions/transaction-manager.js";
-
-export interface PostgresTableNames {
-  readonly users: string;
-  readonly orgs: string;
-  readonly groups: string;
-  readonly memberships: string;
-  readonly entitlements: string;
-  readonly sessions: string;
-  readonly keys: string;
-  readonly auditEvents: string;
-  readonly webhookSubscriptions: string;
-  readonly webhookDeliveries: string;
-}
-
-const defaultTables: PostgresTableNames = {
-  users: "auth_users",
-  orgs: "auth_orgs",
-  groups: "auth_groups",
-  memberships: "auth_memberships",
-  entitlements: "auth_entitlements",
-  sessions: "auth_sessions",
-  keys: "auth_keys",
-  auditEvents: "auth_audit_events",
-  webhookSubscriptions: "auth_webhook_subscriptions",
-  webhookDeliveries: "auth_webhook_deliveries",
-};
+import { resolvePostgresTableNames, type PostgresTableNames } from "./tables.js";
+import {
+  createFallbackHarness,
+  type FallbackHarness,
+} from "./testing/fallback-query-executor.js";
 
 export interface PostgresDataSource {
   readonly executor: QueryExecutor;
@@ -65,16 +44,23 @@ export interface CreatePostgresDataSourceOptions {
   readonly pool?: Pool;
   readonly executor?: QueryExecutor;
   readonly tables?: Partial<PostgresTableNames>;
+  readonly createFallbackHarness?: (tables: PostgresTableNames) => FallbackHarness;
 }
 
 export const createPostgresDataSource = (
-  options: CreatePostgresDataSourceOptions,
+  options: CreatePostgresDataSourceOptions = {},
 ): PostgresDataSource => {
-  const tables: PostgresTableNames = { ...defaultTables, ...(options.tables ?? {}) };
-  const executor = options.executor ?? (options.pool ? createPgQueryExecutor(options.pool) : undefined);
+  const tables = resolvePostgresTableNames(options.tables);
+  let executor = options.executor;
+
+  if (!executor && options.pool) {
+    executor = createPgQueryExecutor(options.pool);
+  }
 
   if (!executor) {
-    throw new Error("createPostgresDataSource requires a pool or executor");
+    const fallbackHarnessFactory = options.createFallbackHarness ?? createFallbackHarness;
+    const harness = fallbackHarnessFactory(tables);
+    executor = harness.executor;
   }
 
   const entitlementStore = createPostgresEntitlementStore(executor, { tables });

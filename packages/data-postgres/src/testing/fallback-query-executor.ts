@@ -3,7 +3,7 @@ import type {
   LabelSet,
 } from "@catalyst-auth/contracts";
 import type { QueryExecutor, QueryResult } from "../executors/query-executor.js";
-import type { PostgresTableNames } from "../postgres-data-source.js";
+import type { PostgresTableNames } from "../tables.js";
 import { clone } from "../utils/clone.js";
 
 export interface UserRow {

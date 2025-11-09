@@ -9,24 +9,14 @@ import type { QueryExecutor } from "../executors/query-executor.js";
 import {
   createPostgresDataSource,
   type PostgresDataSource,
-  type PostgresTableNames,
 } from "../postgres-data-source.js";
 import { postgresMigrations } from "../migrations/index.js";
 import { seedPostgresDataSource, type PostgresSeedData } from "../seeding/seed.js";
 import { createFallbackHarness } from "./fallback-query-executor.js";
-
-const defaultTables: PostgresTableNames = {
-  users: "auth_users",
-  orgs: "auth_orgs",
-  groups: "auth_groups",
-  memberships: "auth_memberships",
-  entitlements: "auth_entitlements",
-  sessions: "auth_sessions",
-  keys: "auth_keys",
-  auditEvents: "auth_audit_events",
-  webhookSubscriptions: "auth_webhook_subscriptions",
-  webhookDeliveries: "auth_webhook_deliveries",
-};
+import {
+  resolvePostgresTableNames,
+  type PostgresTableNames,
+} from "../tables.js";
 
 const migrationsDir = dirname(fileURLToPath(new URL("../migrations/", import.meta.url)));
 
@@ -88,7 +78,7 @@ const createFallbackExecutor = (tables: PostgresTableNames): TestExecutorResult 
 export const createTestPostgresDataSource = async (
   seed?: PostgresSeedData,
 ): Promise<TestPostgresDataSource> => {
-  const tables: PostgresTableNames = { ...defaultTables };
+  const tables: PostgresTableNames = resolvePostgresTableNames();
 
   let executorResult: TestExecutorResult;
   try {

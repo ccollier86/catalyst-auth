@@ -11,3 +11,4 @@ export * from "./transactions/transaction-manager.js";
 export * from "./seeding/seed.js";
 export * from "./testing/test-data-source.js";
 export * from "./migrations/index.js";
+export * from "./tables.js";
