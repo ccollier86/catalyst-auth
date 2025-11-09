@@ -1,0 +1,13 @@
+{
+  "name": "catalyst-auth",
+  "private": true,
+  "packageManager": "pnpm@8.15.4",
+  "scripts": {
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  }
+}
