@@ -8,6 +8,10 @@ import type {
   KeyStorePort,
   PolicyDecision,
   PolicyEnginePort,
+  SessionRecord,
+  SessionDescriptor,
+  SessionStorePort,
+  SessionTouchUpdate,
 } from "@catalyst-auth/contracts";
 
 import type {
@@ -36,6 +40,7 @@ export class ForwardAuthService {
   private readonly keyStore?: KeyStorePort;
   private readonly cache?: CachePort<DecisionCacheEntry>;
   private readonly auditLog?: AuditLogPort;
+  private readonly sessionStore?: SessionStorePort;
   private readonly logger?: ForwardAuthLogger;
   private readonly decisionTtlSeconds: number;
   private readonly cacheKeyPrefix: string;
@@ -54,6 +59,7 @@ export class ForwardAuthService {
     this.keyStore = config.keyStore;
     this.cache = config.decisionCache;
     this.auditLog = config.auditLog;
+    this.sessionStore = config.sessionStore;
     this.logger = config.logger;
     this.hashApiKey = config.hashApiKey ?? defaultHashApiKey;
     this.decisionTtlSeconds = Math.max(
@@ -90,6 +96,7 @@ export class ForwardAuthService {
     }
 
     const identity = identityResult.identity;
+    await this.ensureSessionRecord(identity, headers);
     const action =
       request.action ?? this.buildAction?.(request) ?? `${request.method.toUpperCase()} ${request.path}`;
     const resource = request.resource ?? this.buildResource?.(request);
@@ -191,6 +198,70 @@ export class ForwardAuthService {
     const usageResult = await this.keyStore.recordKeyUsage(key.id, { usedAt: this.now().toISOString() });
     if (!usageResult.ok) {
       this.logger?.warn?.("Failed to record key usage", usageResult.error);
+    }
+  }
+
+  private async ensureSessionRecord(
+    identity: EffectiveIdentity,
+    headers: Record<string, string>,
+  ): Promise<void> {
+    if (!this.sessionStore || !identity.sessionId || !identity.userId) {
+      return;
+    }
+
+    const nowIso = this.now().toISOString();
+    const metadataFromHeaders = buildSessionMetadata(headers);
+
+    try {
+      const existing = await this.sessionStore.getSession(identity.sessionId);
+      if (existing) {
+        const mergedMetadata = mergeMetadataRecords(existing.metadata, metadataFromHeaders);
+        const update: SessionTouchUpdate = mergedMetadata
+          ? { lastSeenAt: nowIso, metadata: mergedMetadata }
+          : { lastSeenAt: nowIso };
+        await this.sessionStore.touchSession(identity.sessionId, update);
+        return;
+      }
+    } catch (error) {
+      this.logger?.warn?.("Failed to read session before touch", error);
+    }
+
+    let descriptor: SessionDescriptor | undefined;
+    try {
+      const descriptorResult = await this.idp.listActiveSessions(identity.userId);
+      if (descriptorResult.ok) {
+        descriptor = descriptorResult.value.find((session) => session.id === identity.sessionId);
+      } else {
+        this.logger?.warn?.("Failed to fetch active sessions from identity provider", descriptorResult.error);
+      }
+    } catch (error) {
+      this.logger?.warn?.("Failed to fetch active sessions from identity provider", error);
+    }
+
+    const mergedMetadata = mergeMetadataRecords(descriptor?.metadata, metadataFromHeaders);
+    const record: SessionRecord = {
+      id: identity.sessionId,
+      userId: identity.userId,
+      createdAt: descriptor?.createdAt ?? nowIso,
+      lastSeenAt: nowIso,
+      factorsVerified: descriptor?.factorsVerified ? [...descriptor.factorsVerified] : [],
+      ...(mergedMetadata ? { metadata: mergedMetadata } : {}),
+    };
+
+    try {
+      await this.sessionStore.createSession(record);
+      return;
+    } catch (error) {
+      this.logger?.warn?.("Failed to create session record", error);
+    }
+
+    const fallbackUpdate: SessionTouchUpdate = record.metadata
+      ? { lastSeenAt: nowIso, metadata: record.metadata }
+      : { lastSeenAt: nowIso };
+    try {
+      await this.sessionStore.touchSession(identity.sessionId, fallbackUpdate);
+    } catch (error) {
+      this.logger?.warn?.("Failed to update session after create failure", error);
     }
   }
 
@@ -351,6 +422,87 @@ const mergeEnvironment = (
   }
   return { ...(base ?? {}), ...(overrides ?? {}) };
 };
+
+const buildSessionMetadata = (
+  headers: Record<string, string>,
+): Record<string, unknown> | undefined => {
+  const context: Record<string, unknown> = {};
+  const forwardedFor = headers["x-forwarded-for"];
+  if (forwardedFor) {
+    context.forwardedFor = forwardedFor;
+    const primary = forwardedFor
+      .split(",")
+      .map((value) => value.trim())
+      .find((value) => value.length > 0);
+    if (primary) {
+      context.ip = primary;
+    }
+  } else if (headers["x-real-ip"]) {
+    context.ip = headers["x-real-ip"];
+  }
+
+  const userAgent = headers["user-agent"];
+  if (userAgent) {
+    context.userAgent = userAgent;
+  }
+
+  const host = headers["x-forwarded-host"];
+  if (host) {
+    context.host = host;
+  }
+
+  const protocol = headers["x-forwarded-proto"];
+  if (protocol) {
+    context.protocol = protocol;
+  }
+
+  const port = headers["x-forwarded-port"];
+  if (port) {
+    context.port = port;
+  }
+
+  if (Object.keys(context).length === 0) {
+    return undefined;
+  }
+
+  return { forwardAuth: context };
+};
+
+const mergeMetadataRecords = (
+  ...sources: ReadonlyArray<Record<string, unknown> | undefined>
+): Record<string, unknown> | undefined => {
+  let merged: Record<string, unknown> | undefined;
+  for (const source of sources) {
+    if (!source) {
+      continue;
+    }
+    merged = merged ? mergePlainRecords(merged, source) : mergePlainRecords({}, source);
+  }
+  return merged && Object.keys(merged).length > 0 ? merged : undefined;
+};
+
+const mergePlainRecords = (
+  target: Record<string, unknown>,
+  source: Record<string, unknown>,
+): Record<string, unknown> => {
+  const result: Record<string, unknown> = { ...target };
+  for (const [key, value] of Object.entries(source)) {
+    const existing = result[key];
+    if (isPlainObject(existing) && isPlainObject(value)) {
+      result[key] = mergePlainRecords(existing, value);
+    } else if (isPlainObject(value)) {
+      result[key] = mergePlainRecords({}, value);
+    } else if (Array.isArray(value)) {
+      result[key] = value.map((entry) => (isPlainObject(entry) ? mergePlainRecords({}, entry) : entry));
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
+};
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
 
 const mergeIdentityWithKey = (identity: EffectiveIdentity, key: KeyRecord): EffectiveIdentity => ({
   ...identity,

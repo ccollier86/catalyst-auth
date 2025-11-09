@@ -10,7 +10,8 @@ import {
   type Result,
 } from "@catalyst-auth/contracts";
 
-import { InMemoryPostgresDatabase } from "../testing/in-memory-database.js";
+import type { PostgresTableNames } from "../tables.js";
+import type { QueryExecutor } from "../executors/query-executor.js";
 import { clone } from "../utils/clone.js";
 
 interface Clock {
@@ -21,19 +22,51 @@ const defaultClock: Clock = {
   now: () => new Date(),
 };
 
+interface AuditEventRow {
+  readonly id: string;
+  readonly occurred_at: string;
+  readonly category: string;
+  readonly action: string;
+  readonly actor: Record<string, unknown> | null;
+  readonly subject: Record<string, unknown> | null;
+  readonly resource: Record<string, unknown> | null;
+  readonly metadata: Record<string, unknown> | null;
+  readonly correlation_id: string | null;
+}
+
+const toRecord = (row: AuditEventRow): AuditEventRecord => ({
+  id: row.id,
+  occurredAt: row.occurred_at,
+  category: row.category,
+  action: row.action,
+  actor: row.actor ? (clone(row.actor) as unknown as AuditEventRecord["actor"]) : undefined,
+  subject: row.subject ? (clone(row.subject) as unknown as AuditEventRecord["subject"]) : undefined,
+  resource: row.resource ? (clone(row.resource) as unknown as AuditEventRecord["resource"]) : undefined,
+  metadata: row.metadata ? clone(row.metadata) : undefined,
+  correlationId: row.correlation_id ?? undefined,
+});
+
+interface PostgresAuditLogOptions {
+  readonly tables?: Pick<PostgresTableNames, "auditEvents">;
+  readonly clock?: Clock;
+}
+
 const createError = (code: string, message: string, details?: Record<string, unknown>): CatalystError => ({
   code,
   message,
   details,
 });
 
-const defaultDatabase = new InMemoryPostgresDatabase();
-
 export class PostgresAuditLog implements AuditLogPort {
+  private readonly table: string;
   private readonly clock: Clock;
 
-  constructor(private readonly database: InMemoryPostgresDatabase = defaultDatabase, clock: Clock = defaultClock) {
-    this.clock = clock;
+  constructor(
+    private readonly executor: QueryExecutor,
+    options: PostgresAuditLogOptions = {},
+  ) {
+    this.table = options.tables?.auditEvents ?? "auth_audit_events";
+    this.clock = options.clock ?? defaultClock;
   }
 
   async appendEvent(input: AppendAuditEventInput): Promise<Result<AuditEventRecord, CatalystError>> {
@@ -45,30 +78,48 @@ export class PostgresAuditLog implements AuditLogPort {
     }
 
     const occurredAt = input.occurredAt ?? this.clock.now().toISOString();
-    const record: AuditEventRecord = {
-      id: randomUUID(),
-      occurredAt,
-      category: input.category,
-      action: input.action,
-      actor: input.actor ? clone(input.actor) : undefined,
-      subject: input.subject ? clone(input.subject) : undefined,
-      resource: input.resource ? clone(input.resource) : undefined,
-      metadata: input.metadata ? clone(input.metadata) : undefined,
-      correlationId: input.correlationId,
-    };
+    const id = randomUUID();
 
-    this.database.recordAuditEvent(record);
-    return ok(clone(record));
+    const { rows } = await this.executor.query<AuditEventRow>(
+      `INSERT INTO ${this.table} (
+        id,
+        occurred_at,
+        category,
+        action,
+        actor,
+        subject,
+        resource,
+        metadata,
+        correlation_id
+      ) VALUES (
+        $1,$2,$3,$4,$5,$6,$7,$8,$9
+      )
+      RETURNING *`,
+      [
+        id,
+        occurredAt,
+        input.category,
+        input.action,
+        input.actor ?? null,
+        input.subject ?? null,
+        input.resource ?? null,
+        input.metadata ?? null,
+        input.correlationId ?? null,
+      ],
+    );
+
+    return ok(toRecord(rows[0]));
   }
 
   async listEvents(): Promise<Result<ReadonlyArray<AuditEventRecord>, CatalystError>> {
-    const events = Array.from(this.database.auditEvents.values()).map((event) => clone(event));
-    events.sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
-    return ok(events);
+    const { rows } = await this.executor.query<AuditEventRow>(
+      `SELECT * FROM ${this.table} ORDER BY occurred_at ASC, id ASC`,
+    );
+    return ok(rows.map((row) => toRecord(row)));
   }
 }
 
 export const createPostgresAuditLog = (
-  database?: InMemoryPostgresDatabase,
-  clock?: Clock,
-): AuditLogPort => new PostgresAuditLog(database, clock ?? defaultClock);
+  executor: QueryExecutor,
+  options?: PostgresAuditLogOptions,
+): AuditLogPort => new PostgresAuditLog(executor, options);

@@ -11,10 +11,13 @@ import { z } from "../vendor/zod.js";
 
 import type { CatalystSdkDependencies } from "../index.js";
 import { createValidationError } from "../shared/errors.js";
+import { labelSetSchema } from "../shared/schemas.js";
 import { safeParse } from "../shared/validation.js";
 
-const keyOwnerSchema = z.object({
-  kind: z.enum(["user", "org", "service", "system"]),
+const keyOwnerKinds = ["user", "org", "service", "system"] as const;
+
+const keyOwnerSchema: z.ZodType<KeyOwnerReference> = z.object({
+  kind: z.enum(keyOwnerKinds),
   id: z.string().min(1),
 });
 
@@ -26,13 +29,18 @@ const issueKeySchema: z.ZodType<IssueKeyInput> = z.object({
   description: z.string().optional(),
   createdBy: keyOwnerSchema.optional(),
   scopes: z.array(z.string().min(1)),
-  labels: z.record(z.union([z.string(), z.boolean(), z.number()])).optional(),
+  labels: labelSetSchema.optional(),
   expiresAt: z.string().optional(),
   createdAt: z.string().optional(),
   metadata: z.record(z.unknown()).optional(),
 });
 
-const listKeysSchema = z.object({
+type ListKeysInput = {
+  readonly owner: KeyOwnerReference;
+  readonly options?: ListKeysOptions | undefined;
+};
+
+const listKeysSchema: z.ZodType<ListKeysInput> = z.object({
   owner: keyOwnerSchema,
   options: z
     .object({
@@ -42,7 +50,12 @@ const listKeysSchema = z.object({
     .optional(),
 });
 
-const recordUsageSchema = z.object({
+type RecordUsageInput = {
+  readonly keyId: string;
+  readonly options?: KeyUsageOptions | undefined;
+};
+
+const recordUsageSchema: z.ZodType<RecordUsageInput> = z.object({
   keyId: z.string().min(1),
   options: z
     .object({
@@ -51,7 +64,16 @@ const recordUsageSchema = z.object({
     .optional(),
 });
 
-const revokeKeySchema = z.object({
+type RevokeKeyInput = {
+  readonly keyId: string;
+  readonly input?: {
+    readonly reason?: string | undefined;
+    readonly revokedBy?: KeyOwnerReference | undefined;
+    readonly revokedAt?: string | undefined;
+  };
+};
+
+const revokeKeySchema: z.ZodType<RevokeKeyInput> = z.object({
   keyId: z.string().min(1),
   input: z
     .object({
