@@ -22,10 +22,6 @@ import {
 } from "./repositories/webhook-repository.js";
 import { PostgresTransactionManager } from "./transactions/transaction-manager.js";
 import { resolvePostgresTableNames, type PostgresTableNames } from "./tables.js";
-import {
-  createFallbackHarness,
-  type FallbackHarness,
-} from "./testing/fallback-query-executor.js";
 
 export interface PostgresDataSource {
   readonly executor: QueryExecutor;
@@ -44,7 +40,6 @@ export interface CreatePostgresDataSourceOptions {
   readonly pool?: Pool;
   readonly executor?: QueryExecutor;
   readonly tables?: Partial<PostgresTableNames>;
-  readonly createFallbackHarness?: (tables: PostgresTableNames) => FallbackHarness;
 }
 
 export const createPostgresDataSource = (
@@ -58,9 +53,7 @@ export const createPostgresDataSource = (
   }
 
   if (!executor) {
-    const fallbackHarnessFactory = options.createFallbackHarness ?? createFallbackHarness;
-    const harness = fallbackHarnessFactory(tables);
-    executor = harness.executor;
+    throw new Error("createPostgresDataSource requires a pool or query executor");
   }
 
   const entitlementStore = createPostgresEntitlementStore(executor, { tables });
