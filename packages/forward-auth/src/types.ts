@@ -4,6 +4,7 @@ import type {
   KeyStorePort,
   ResourceDescriptor,
   EffectiveIdentity,
+  SessionStorePort,
 } from "@catalyst-auth/contracts";
 
 export interface DecisionCacheEntry {
@@ -40,6 +41,7 @@ export interface ForwardAuthConfig {
   readonly decisionCacheTtlSeconds?: number;
   readonly keyStore?: KeyStorePort;
   readonly auditLog?: AuditLogPort;
+  readonly sessionStore?: SessionStorePort;
   readonly hashApiKey?: (secret: string) => Promise<string> | string;
   readonly logger?: ForwardAuthLogger;
   readonly now?: () => Date;

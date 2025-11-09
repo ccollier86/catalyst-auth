@@ -5,11 +5,17 @@ import {
   ok,
   type CatalystError,
   type EffectiveIdentity,
+  type EntitlementRecord,
+  type EntitlementStorePort,
+  type EntitlementQuery,
   type IdpAdapterPort,
   type IdpUserProfile,
   type JwtDescriptor,
   type MintDecisionJwtInput,
   type Result,
+  type SessionRecord,
+  type SessionStorePort,
+  type SessionTouchUpdate,
   type SessionDescriptor,
   type TokenExchangeRequest,
   type TokenPair,
@@ -108,6 +114,93 @@ class FakeTokenService implements TokenServicePort {
   }
 }
 
+class FakeEntitlementStore implements EntitlementStorePort {
+  private readonly records = new Map<string, EntitlementRecord>();
+
+  constructor() {
+    const record: EntitlementRecord = {
+      id: "ent-1",
+      subjectKind: "user",
+      subjectId: "user-1",
+      entitlement: "feature:basic",
+      createdAt: new Date(2024, 0, 1).toISOString(),
+      metadata: { plan: "starter" },
+    };
+    this.records.set(record.id, record);
+  }
+
+  async listEntitlements(subject: EntitlementQuery) {
+    return Array.from(this.records.values()).filter(
+      (record) => record.subjectKind === subject.subjectKind && record.subjectId === subject.subjectId,
+    );
+  }
+
+  async listEntitlementsForSubjects(subjects: ReadonlyArray<EntitlementQuery>) {
+    return Array.from(this.records.values()).filter((record) =>
+      subjects.some(
+        (subject) => record.subjectKind === subject.subjectKind && record.subjectId === subject.subjectId,
+      ),
+    );
+  }
+
+  async upsertEntitlement(entitlement: EntitlementRecord) {
+    this.records.set(entitlement.id, entitlement);
+    return entitlement;
+  }
+
+  async removeEntitlement(id: string) {
+    this.records.delete(id);
+  }
+}
+
+class FakeSessionStore implements SessionStorePort {
+  private readonly records = new Map<string, SessionRecord>();
+
+  constructor() {
+    const record: SessionRecord = {
+      id: "sess-1",
+      userId: "user-1",
+      createdAt: new Date(2024, 0, 1).toISOString(),
+      lastSeenAt: new Date(2024, 0, 2).toISOString(),
+      factorsVerified: ["password"],
+      metadata: { device: "seed" },
+    };
+    this.records.set(record.id, record);
+  }
+
+  async getSession(id: string) {
+    return this.records.get(id);
+  }
+
+  async listSessionsByUser(userId: string) {
+    return Array.from(this.records.values()).filter((record) => record.userId === userId);
+  }
+
+  async createSession(session: SessionRecord) {
+    this.records.set(session.id, session);
+    return session;
+  }
+
+  async touchSession(id: string, update: SessionTouchUpdate) {
+    const current = this.records.get(id);
+    if (!current) {
+      throw new Error(`Session ${id} not found`);
+    }
+    const next: SessionRecord = {
+      ...current,
+      lastSeenAt: update.lastSeenAt,
+      factorsVerified: update.factorsVerified ?? current.factorsVerified,
+      metadata: update.metadata ?? current.metadata,
+    };
+    this.records.set(id, next);
+    return next;
+  }
+
+  async deleteSession(id: string) {
+    this.records.delete(id);
+  }
+}
+
 describe("@catalyst-auth/sdk", () => {
   const createSdk = () => {
     const profileStore = createInMemoryProfileStore({
@@ -150,6 +243,8 @@ describe("@catalyst-auth/sdk", () => {
       idp: new FakeIdpAdapter(),
       profileStore,
       keyStore: createMemoryKeyStore(),
+      entitlementStore: new FakeEntitlementStore(),
+      sessionStore: new FakeSessionStore(),
       webhookDelivery: createMemoryWebhookDelivery({
         httpClient: async () => ({ status: 200, ok: true }),
       }),
@@ -270,6 +365,109 @@ describe("@catalyst-auth/sdk", () => {
         // @ts-expect-error testing runtime validation
         owner: { kind: "user", id: "user-1" },
         scopes: ["read"],
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe("sdk.validation_failed");
+      }
+    });
+  });
+
+  describe("entitlements module", () => {
+    it("lists existing entitlements", async () => {
+      const sdk = createSdk();
+      const result = await sdk.entitlements.listEntitlements({
+        subject: { kind: "user", id: "user-1" },
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.length).toBeGreaterThan(0);
+        expect(result.value[0].entitlement).toBe("feature:basic");
+      }
+    });
+
+    it("upserts entitlements", async () => {
+      const sdk = createSdk();
+      const upserted = await sdk.entitlements.upsertEntitlement({
+        entitlement: {
+          id: "ent-2",
+          subjectKind: "org",
+          subjectId: "org-1",
+          entitlement: "feature:advanced",
+          createdAt: new Date(2024, 0, 3).toISOString(),
+        },
+      });
+      expect(upserted.ok).toBe(true);
+      const listed = await sdk.entitlements.listEntitlements({ subject: { kind: "org", id: "org-1" } });
+      expect(listed.ok).toBe(true);
+      if (listed.ok) {
+        expect(listed.value.map((item) => item.entitlement)).toContain("feature:advanced");
+      }
+    });
+
+    it("validates entitlement payloads", async () => {
+      const sdk = createSdk();
+      const result = await sdk.entitlements.upsertEntitlement({
+        entitlement: {
+          id: "",
+          subjectKind: "user",
+          subjectId: "user-1",
+          entitlement: "feature:invalid",
+          createdAt: new Date().toISOString(),
+        },
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe("sdk.validation_failed");
+      }
+    });
+  });
+
+  describe("sessions module", () => {
+    it("creates, touches, and lists sessions", async () => {
+      const sdk = createSdk();
+      const created = await sdk.sessions.createSession({
+        session: {
+          id: "sess-2",
+          userId: "user-1",
+          createdAt: new Date(2024, 0, 4).toISOString(),
+          lastSeenAt: new Date(2024, 0, 4, 1).toISOString(),
+          factorsVerified: ["password"],
+        },
+      });
+      expect(created.ok).toBe(true);
+      if (!created.ok) {
+        throw new Error("failed to create session");
+      }
+      const touched = await sdk.sessions.touchSession({
+        sessionId: "sess-2",
+        update: { lastSeenAt: new Date(2024, 0, 4, 2).toISOString(), metadata: { ip: "127.0.0.1" } },
+      });
+      expect(touched.ok).toBe(true);
+      if (touched.ok) {
+        expect(touched.value.metadata?.ip).toBe("127.0.0.1");
+      }
+      const listed = await sdk.sessions.listSessions({ userId: "user-1" });
+      expect(listed.ok).toBe(true);
+      if (listed.ok) {
+        expect(listed.value.some((session) => session.id === "sess-2")).toBe(true);
+      }
+    });
+
+    it("reports missing sessions", async () => {
+      const sdk = createSdk();
+      const result = await sdk.sessions.getSession({ sessionId: "missing" });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe("sdk.not_found");
+      }
+    });
+
+    it("validates session identifiers", async () => {
+      const sdk = createSdk();
+      const result = await sdk.sessions.getSession({
+        // @ts-expect-error runtime validation
+        sessionId: "",
       });
       expect(result.ok).toBe(false);
       if (!result.ok) {
