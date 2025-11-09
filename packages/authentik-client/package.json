@@ -1,0 +1,18 @@
+{
+  "name": "@catalyst-auth/authentik-client",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b tsconfig.json",
+    "lint": "echo 'No lint configured for @catalyst-auth/authentik-client'",
+    "test": "node ../../scripts/link-workspace-packages.mjs && node --test ./test/**/*.test.js"
+  },
+  "dependencies": {
+    "@catalyst-auth/contracts": "^0.1.0"
+  }
+}
