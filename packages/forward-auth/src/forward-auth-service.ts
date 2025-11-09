@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type {
+  AuditLogPort,
   CachePort,
   EffectiveIdentity,
   IdpAdapterPort,
@@ -34,6 +35,7 @@ export class ForwardAuthService {
   private readonly policyEngine: PolicyEnginePort;
   private readonly keyStore?: KeyStorePort;
   private readonly cache?: CachePort<DecisionCacheEntry>;
+  private readonly auditLog?: AuditLogPort;
   private readonly logger?: ForwardAuthLogger;
   private readonly decisionTtlSeconds: number;
   private readonly cacheKeyPrefix: string;
@@ -51,6 +53,7 @@ export class ForwardAuthService {
     this.policyEngine = dependencies.policyEngine;
     this.keyStore = config.keyStore;
     this.cache = config.decisionCache;
+    this.auditLog = config.auditLog;
     this.logger = config.logger;
     this.hashApiKey = config.hashApiKey ?? defaultHashApiKey;
     this.decisionTtlSeconds = Math.max(
@@ -112,7 +115,7 @@ export class ForwardAuthService {
     }
 
     const response = this.buildAllowResponse(identity, decision);
-    await this.maybeCacheDecision(decision, response.headers);
+    await this.maybeCacheDecision(identity, decision, response.headers);
     return response;
   }
 
@@ -204,7 +207,11 @@ export class ForwardAuthService {
     return { status: 200, headers };
   }
 
-  private async maybeCacheDecision(decision: PolicyDecision, headers: Record<string, string>): Promise<void> {
+  private async maybeCacheDecision(
+    identity: EffectiveIdentity,
+    decision: PolicyDecision,
+    headers: Record<string, string>,
+  ): Promise<void> {
     if (!decision.decisionJwt || !this.cache) {
       return;
     }
@@ -216,6 +223,37 @@ export class ForwardAuthService {
       ttlSeconds: this.decisionTtlSeconds,
       tags: ["decision-jwt"],
     });
+
+    await this.appendAuditEvent(decision.decisionJwt, identity, cacheEntry.expiresAt);
+  }
+
+  private async appendAuditEvent(
+    decisionJwt: string,
+    identity: EffectiveIdentity,
+    expiresAt: string,
+  ): Promise<void> {
+    if (!this.auditLog) {
+      return;
+    }
+    const result = await this.auditLog.appendEvent({
+      category: "forward_auth",
+      action: "decision_cached",
+      occurredAt: this.now().toISOString(),
+      subject: identity.userId
+        ? { type: "user", id: identity.userId, labels: { orgId: identity.orgId } }
+        : undefined,
+      resource: { type: "decision", id: decisionJwt },
+      metadata: {
+        expiresAt,
+        groups: identity.groups,
+        roles: identity.roles,
+        scopes: identity.scopes,
+        entitlements: identity.entitlements,
+      },
+    });
+    if (!result.ok) {
+      this.logger?.warn?.("Failed to append forward auth audit event", result.error);
+    }
   }
 
   private extractCredentials(headers: Record<string, string>): CredentialDescriptor | undefined {

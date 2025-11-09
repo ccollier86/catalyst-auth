@@ -46,10 +46,27 @@ const buildService = (overrides = {}) =>
       signer: {
         algorithm: 'RS256',
         privateKey: rsaPrivatePem,
-        keyId: 'rsa-test',
+        keyId: 'rsa-decision',
       },
       audience: 'traefik',
       defaultTtlSeconds: 30,
+    },
+    access: {
+      signer: {
+        algorithm: 'RS256',
+        privateKey: rsaPrivatePem,
+        keyId: 'rsa-access',
+      },
+      audience: 'api',
+      defaultTtlSeconds: 600,
+    },
+    refresh: {
+      signer: {
+        algorithm: 'RS256',
+        privateKey: rsaPrivatePem,
+        keyId: 'rsa-refresh',
+      },
+      defaultTtlSeconds: 3600,
     },
     now: nowFn,
     jtiFactory: () => 'jti-fixed',
@@ -75,7 +92,7 @@ test('mints decision JWTs with identity and resource context', async () => {
 
   const decoded = decodeJwt(result.value.token);
   assert.equal(decoded.header.alg, 'RS256');
-  assert.equal(decoded.header.kid, 'rsa-test');
+  assert.equal(decoded.header.kid, 'rsa-decision');
   assert.equal(decoded.payload.iss, 'https://auth.catalyst.test');
   assert.equal(decoded.payload.sub, 'user-123');
   assert.equal(decoded.payload.token_type, 'decision');
@@ -180,4 +197,61 @@ test('does not leak mutable identity references', async () => {
 
   assert.deepEqual(decoded.payload.groups, ['engineering']);
   assert.deepEqual(decoded.payload.labels, { plan: 'pro', region: 'us' });
+});
+
+test('mints access tokens with scopes and metadata', async () => {
+  const service = buildService();
+  const result = await service.mintAccessToken({
+    subject: 'user-123',
+    clientId: 'cli-1',
+    scopes: ['read', 'write'],
+    orgId: 'org-9',
+    sessionId: 'sess-8',
+    metadata: { ip: '127.0.0.1' },
+  });
+
+  assert.equal(result.ok, true);
+  const decoded = decodeJwt(result.value.token);
+  assert.equal(decoded.payload.iss, 'https://auth.catalyst.test');
+  assert.equal(decoded.payload.sub, 'user-123');
+  assert.equal(decoded.payload.client_id, 'cli-1');
+  assert.equal(decoded.payload.token_type, 'access');
+  assert.equal(decoded.payload.org, 'org-9');
+  assert.equal(decoded.payload.session, 'sess-8');
+  assert.equal(decoded.payload.scope, 'read write');
+  assert.deepEqual(decoded.payload.metadata, { ip: '127.0.0.1' });
+});
+
+test('mints refresh tokens with session references', async () => {
+  const service = buildService();
+  const result = await service.mintRefreshToken({
+    subject: 'user-123',
+    clientId: 'cli-1',
+    sessionId: 'sess-9',
+  });
+
+  assert.equal(result.ok, true);
+  const decoded = decodeJwt(result.value.token);
+  assert.equal(decoded.payload.token_type, 'refresh');
+  assert.equal(decoded.payload.session, 'sess-9');
+});
+
+test('mints coordinated token pairs', async () => {
+  const service = buildService();
+  const result = await service.mintTokenPair(
+    {
+      subject: 'user-789',
+      clientId: 'cli-2',
+      scopes: ['read'],
+    },
+    {
+      subject: 'user-789',
+      clientId: 'cli-2',
+    },
+  );
+
+  assert.equal(result.ok, true);
+  assert.ok(result.value.accessToken.includes('.'));
+  assert.ok(result.value.refreshToken.includes('.'));
+  assert.equal(typeof result.value.expiresAt, 'string');
 });

@@ -1,12 +1,7 @@
 import type { Result } from "../../types/result.js";
 import type { CatalystError } from "../../types/domain-error.js";
 import type { EffectiveIdentity } from "../../types/identity.js";
-
-export interface TokenPair {
-  readonly accessToken: string;
-  readonly refreshToken: string;
-  readonly expiresAt: string;
-}
+import type { TokenPair } from "../../types/token.js";
 
 export interface TokenExchangeRequest {
   readonly code: string;

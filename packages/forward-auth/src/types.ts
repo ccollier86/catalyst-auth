@@ -1,4 +1,5 @@
 import type {
+  AuditLogPort,
   CachePort,
   KeyStorePort,
   ResourceDescriptor,
@@ -38,6 +39,7 @@ export interface ForwardAuthConfig {
   readonly decisionCacheKeyPrefix?: string;
   readonly decisionCacheTtlSeconds?: number;
   readonly keyStore?: KeyStorePort;
+  readonly auditLog?: AuditLogPort;
   readonly hashApiKey?: (secret: string) => Promise<string> | string;
   readonly logger?: ForwardAuthLogger;
   readonly now?: () => Date;
