@@ -1,19 +1,20 @@
 declare module "pg-mem" {
-  export interface PgMemAdapters {
-    createPg(): { Pool: new () => import("pg").Pool };
+  interface PgPoolLike {
+    new (): import("pg").Pool;
   }
 
-  export interface PgMemDatabaseOptions {
-    autoCreateForeignKeyIndices?: boolean;
-  }
-
-  export interface PgMemDatabase {
-    public: {
-      none(sql: string): void;
-      many(sql: string): ReadonlyArray<Record<string, unknown>>;
+  interface PgAdapters {
+    createPg(): {
+      Pool: PgPoolLike;
     };
-    adapters: PgMemAdapters;
   }
 
-  export function newDb(options?: PgMemDatabaseOptions): PgMemDatabase;
+  interface MemoryDb {
+    adapters: PgAdapters;
+    public: {
+      none(sql: string): unknown;
+    };
+  }
+
+  export function newDb(options?: { autoCreateForeignKeyIndices?: boolean }): MemoryDb;
 }

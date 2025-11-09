@@ -109,7 +109,7 @@ test("allows requests with valid access tokens and caches decision JWTs", async 
   const cachedEntry = await cache.get("forward-auth:decision:decision.jwt");
   assert.ok(cachedEntry, "decision JWT should be cached");
 
-  const auditEvents = dataSource.listAuditEvents();
+  const auditEvents = await dataSource.listAuditEvents();
   assert.strictEqual(auditEvents.length, 1, "audit event should be recorded for cached decision");
   assert.strictEqual(auditEvents[0].action, "decision_cached");
   assert.strictEqual(auditEvents[0].resource?.id, "decision.jwt");
