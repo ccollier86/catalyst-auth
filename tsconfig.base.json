@@ -23,7 +23,8 @@
       "@catalyst-auth/key-memory": ["packages/key-memory/src/index.ts"],
       "@catalyst-auth/profile-memory": ["packages/profile-memory/src/index.ts"],
       "@catalyst-auth/policy-basic": ["packages/policy-basic/src/index.ts"],
-      "@catalyst-auth/webhook-memory": ["packages/webhook-memory/src/index.ts"]
+      "@catalyst-auth/webhook-memory": ["packages/webhook-memory/src/index.ts"],
+      "@catalyst-auth/forward-auth": ["packages/forward-auth/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "dist", "build"]
