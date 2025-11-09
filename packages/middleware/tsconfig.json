@@ -10,7 +10,7 @@
   ],
   "references": [
     {
-      "path": "../contracts"
+      "path": "../forward-auth"
     }
   ]
 }

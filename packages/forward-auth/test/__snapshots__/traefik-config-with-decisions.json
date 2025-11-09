@@ -1,0 +1,21 @@
+{
+  "labels": [
+    "traefik.http.routers.app-example-com.rule=Host(`app.example.com`) || Host(`app.staging.example.com`)",
+    "traefik.http.routers.app-example-com.service=app-service",
+    "traefik.http.routers.app-example-com.middlewares=app-example-com-forward-auth",
+    "traefik.http.routers.app-example-com.entrypoints=websecure",
+    "traefik.http.middlewares.app-example-com-forward-auth.forwardauth.address=http://forward-auth:3001/forward-auth",
+    "traefik.http.middlewares.app-example-com-forward-auth.forwardauth.trustForwardHeader=true",
+    "traefik.http.middlewares.app-example-com-forward-auth.forwardauth.authResponseHeaders=X-User-Sub,X-Decision-Jwt"
+  ],
+  "decisionRouters": [
+    "traefik.http.routers.app-example-com--catalyst-decision-jwks.rule=Host(`app.example.com`) && Host(`app.staging.example.com`) && PathPrefix(`/_catalyst/decision/jwks`)",
+    "traefik.http.routers.app-example-com--catalyst-decision-jwks.service=app-example-com--catalyst-decision-jwks",
+    "traefik.http.services.app-example-com--catalyst-decision-jwks.loadbalancer.server.url=http://forward-auth:3001/decision/jwks",
+    "traefik.http.routers.app-service-decision-cache.rule=Host(`app.example.com`) && Host(`app.staging.example.com`) && PathPrefix(`/_catalyst/decision/cache`)",
+    "traefik.http.routers.app-service-decision-cache.service=app-service-decision-cache",
+    "traefik.http.services.app-service-decision-cache.loadbalancer.server.url=http://forward-auth:3001/decision/cache",
+    "traefik.http.routers.app-service-decision-cache.entrypoints=internal",
+    "traefik.http.routers.app-service-decision-cache.middlewares=auth-basic"
+  ]
+}

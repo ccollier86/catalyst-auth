@@ -9,3 +9,23 @@ export type {
   ForwardAuthFetchHandlerOptions,
   ForwardAuthHandlerContext,
 } from "./types.js";
+
+export { buildTraefikForwardAuthConfig } from "./traefik-config.js";
+export {
+  createDecisionCacheWarmer,
+  createDecisionJwksResponse,
+  warmDecisionsWithService,
+} from "./decision-distribution.js";
+export type {
+  TraefikForwardAuthOptions,
+  TraefikForwardAuthConfig,
+  TraefikDecisionRouteOptions,
+} from "./traefik-config.js";
+export type {
+  DecisionCacheWarmerOptions,
+  DecisionCacheWarmResult,
+  DecisionWarmRequest,
+  DecisionJwkInput,
+  DecisionJwksResponseOptions,
+  ForwardAuthLike,
+} from "./decision-distribution.js";

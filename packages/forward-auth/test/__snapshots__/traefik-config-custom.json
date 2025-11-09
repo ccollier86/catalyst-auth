@@ -1,0 +1,10 @@
+{
+  "labels": [
+    "traefik.http.routers.docs-router.rule=Host(`docs.example.com`)",
+    "traefik.http.routers.docs-router.service=docs",
+    "traefik.http.routers.docs-router.middlewares=docs-forward,gzip,secure-headers",
+    "traefik.http.middlewares.docs-forward.forwardauth.address=http://forward:8080/auth",
+    "traefik.http.middlewares.docs-forward.forwardauth.authResponseHeaders=X-User,X-Org"
+  ],
+  "decisionRouters": []
+}
