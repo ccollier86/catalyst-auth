@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "baseUrl": ".",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "moduleDetection": "force",
+    "declaration": true,
+    "declarationMap": true,
+    "strict": true,
+    "noImplicitOverride": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "useUnknownInCatchVariables": true,
+    "forceConsistentCasingInFileNames": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "paths": {
+      "@catalyst-auth/contracts": ["packages/contracts/src/index.ts"],
+      "@catalyst-auth/authentik-client": ["packages/authentik-client/src/index.ts"],
+      "@catalyst-auth/cache-memory": ["packages/cache-memory/src/index.ts"],
+      "@catalyst-auth/key-memory": ["packages/key-memory/src/index.ts"],
+      "@catalyst-auth/profile-memory": ["packages/profile-memory/src/index.ts"],
+      "@catalyst-auth/policy-basic": ["packages/policy-basic/src/index.ts"],
+      "@catalyst-auth/webhook-memory": ["packages/webhook-memory/src/index.ts"],
+      "@catalyst-auth/forward-auth": ["packages/forward-auth/src/index.ts"],
+      "@catalyst-auth/token-service": ["packages/token-service/src/index.ts"]
+    }
+  },
+  "exclude": ["node_modules", "dist", "build"]
+}
