@@ -10,7 +10,7 @@
   "scripts": {
     "build": "tsc -b tsconfig.json",
     "lint": "echo 'No lint configured for @catalyst-auth/authentik-client'",
-    "test": "echo 'No tests configured for @catalyst-auth/authentik-client'"
+    "test": "node ../../scripts/link-workspace-packages.mjs && node --test ./test/**/*.test.js"
   },
   "dependencies": {
     "@catalyst-auth/contracts": "^0.1.0"

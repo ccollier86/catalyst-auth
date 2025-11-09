@@ -78,7 +78,7 @@ const resolveFetch = (provided?: FetchLike): FetchLike => {
       const response = await (candidate as (
         url: string,
         init?: Record<string, unknown>,
-      ) => Promise<unknown>)(input, init);
+      ) => Promise<unknown>)(input, init as Record<string, unknown> | undefined);
 
       if (!response || typeof response !== "object") {
         throw new Error("Fetch implementation returned an invalid response");
