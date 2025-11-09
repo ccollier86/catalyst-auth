@@ -46,6 +46,9 @@
       ],
       "@catalyst-auth/middleware": [
         "packages/middleware/src/index.ts"
+      ],
+      "@catalyst-auth/sdk": [
+        "packages/sdk/src/index.ts"
       ]
     }
   },

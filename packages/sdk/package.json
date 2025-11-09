@@ -1,0 +1,24 @@
+{
+  "name": "@catalyst-auth/sdk",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b tsconfig.json",
+    "lint": "echo 'No lint configured for @catalyst-auth/sdk'",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@catalyst-auth/contracts": "^0.1.0"
+  },
+  "devDependencies": {
+    "vitest": "^1.6.0",
+    "@catalyst-auth/profile-memory": "^0.1.0",
+    "@catalyst-auth/key-memory": "^0.1.0",
+    "@catalyst-auth/webhook-memory": "^0.1.0"
+  }
+}
