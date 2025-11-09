@@ -42,6 +42,37 @@ const forwardAuth = new ForwardAuthService(
 );
 ```
 
+### Postgres-backed runtime
+
+Production deployments can compose the forward-auth service with the Postgres data plane using
+`createPostgresForwardAuthRuntime`. The helper provisions the Postgres repositories and injects the
+audit log, key store, and session store into the service while letting you customise cache, logger,
+and hashing behaviour.
+
+When the session store is available, `ForwardAuthService` automatically upserts session activity.
+It merges metadata from the identity provider with proxy headers under a `forwardAuth` key so you
+can inspect IP, host, and user-agent history for each session.
+
+```ts
+import { Pool } from "pg";
+import { createPostgresForwardAuthRuntime } from "@catalyst-auth/forward-auth";
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+const { service, dataSource } = createPostgresForwardAuthRuntime({
+  idp: authentikAdapter,
+  policyEngine,
+  pool,
+  forwardAuth: {
+    decisionCache: redisDecisionCache,
+    logger,
+  },
+});
+
+// `service` handles forward auth requests and records audit + session activity in Postgres.
+// `dataSource` exposes the repositories for seeding or additional wiring.
+```
+
 ### Decision caching semantics
 
 The service automatically caches successful policy decisions when a `decisionCache` is configured. Cache entries are keyed by the

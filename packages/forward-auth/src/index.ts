@@ -29,3 +29,11 @@ export type {
   DecisionJwksResponseOptions,
   ForwardAuthLike,
 } from "./decision-distribution.js";
+export {
+  createPostgresForwardAuthRuntime,
+} from "./postgres-runtime.js";
+export type {
+  PostgresForwardAuthRuntime,
+  PostgresForwardAuthConfig,
+  CreatePostgresForwardAuthRuntimeOptions,
+} from "./postgres-runtime.js";
