@@ -21,7 +21,8 @@
       "@catalyst-auth/authentik-client": ["packages/authentik-client/src/index.ts"],
       "@catalyst-auth/cache-memory": ["packages/cache-memory/src/index.ts"],
       "@catalyst-auth/profile-memory": ["packages/profile-memory/src/index.ts"],
-      "@catalyst-auth/policy-basic": ["packages/policy-basic/src/index.ts"]
+      "@catalyst-auth/policy-basic": ["packages/policy-basic/src/index.ts"],
+      "@catalyst-auth/webhook-memory": ["packages/webhook-memory/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "dist", "build"]
