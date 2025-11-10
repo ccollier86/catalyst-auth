@@ -4,7 +4,6 @@ export * from "./types/identity.js";
 export * from "./types/key.js";
 export * from "./types/token.js";
 export * from "./types/audit.js";
-
 export * from "./ports/cache/cache-port.js";
 export * from "./ports/profile/profile-store-port.js";
 export * from "./ports/entitlements/entitlement-store-port.js";

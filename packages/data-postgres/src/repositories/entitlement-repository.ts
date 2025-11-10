@@ -7,10 +7,12 @@ import type {
 
 import type { PostgresTableNames } from "../tables.js";
 import type { QueryExecutor } from "../executors/query-executor.js";
+import { PostgresCacheInvalidator } from "../utils/cache-invalidation.js";
 type EntitlementTables = Pick<PostgresTableNames, "entitlements">;
 
 interface PostgresEntitlementStoreOptions {
   readonly tables?: EntitlementTables;
+  readonly cacheInvalidator?: PostgresCacheInvalidator;
 }
 
 interface EntitlementRow {
@@ -72,6 +74,7 @@ const buildSubjectClauses = (
 
 export class PostgresEntitlementStore implements EntitlementStorePort {
   private readonly tables: EntitlementTables;
+  private readonly cacheInvalidator?: PostgresCacheInvalidator;
 
   constructor(
     private readonly executor: QueryExecutor,
@@ -80,6 +83,7 @@ export class PostgresEntitlementStore implements EntitlementStorePort {
     this.tables = {
       entitlements: options.tables?.entitlements ?? "auth_entitlements",
     };
+    this.cacheInvalidator = options.cacheInvalidator;
   }
 
   async listEntitlements(subject: EntitlementQuery): Promise<ReadonlyArray<EntitlementRecord>> {
@@ -134,15 +138,41 @@ export class PostgresEntitlementStore implements EntitlementStorePort {
         entitlement.metadata ?? null,
       ],
     );
-
-    return toRecord(rows[0]);
+    const record = toRecord(rows[0]);
+    await this.invalidateEntitlement(record);
+    return record;
   }
 
   async removeEntitlement(id: string): Promise<void> {
-    await this.executor.query(
-      `DELETE FROM ${this.tables.entitlements} WHERE id = $1`,
+    const { rows } = await this.executor.query<EntitlementRow>(
+      `DELETE FROM ${this.tables.entitlements} WHERE id = $1 RETURNING *`,
       [id],
     );
+    if (rows.length === 0) {
+      return;
+    }
+    const record = toRecord(rows[0]);
+    await this.invalidateEntitlement(record);
+  }
+
+  private async invalidateEntitlement(record: EntitlementRecord): Promise<void> {
+    if (!this.cacheInvalidator) {
+      return;
+    }
+
+    switch (record.subjectKind) {
+      case "user":
+        await this.cacheInvalidator.invalidate({ userId: record.subjectId });
+        break;
+      case "org":
+        await this.cacheInvalidator.invalidate({ orgId: record.subjectId });
+        break;
+      case "membership":
+        await this.cacheInvalidator.invalidate({ membershipId: record.subjectId });
+        break;
+      default:
+        break;
+    }
   }
 }
 

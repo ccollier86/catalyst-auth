@@ -11,5 +11,8 @@
     "build": "tsc -b tsconfig.json",
     "lint": "echo 'No lint configured for @catalyst-auth/contracts'",
     "test": "echo 'No tests configured for @catalyst-auth/contracts'"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.0"
   }
 }

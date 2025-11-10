@@ -147,3 +147,86 @@ test("validates memberships when computing identities", async () => {
     /does not belong to org other/,
   );
 });
+
+test("profile mutations invalidate decision and identity caches", async () => {
+  const decisionCache = createCacheCollector();
+  const identityCache = createCacheCollector();
+  const dataSource = await createTestPostgresDataSource(undefined, {
+    cacheOptions: {
+      decisionCache,
+      effectiveIdentityCache: identityCache,
+    },
+  });
+  const { profileStore } = dataSource;
+
+  await profileStore.upsertUserProfile({
+    ...exampleUser,
+    primaryOrgId: "org-1",
+  });
+
+  await profileStore.upsertOrgProfile({
+    id: "org-1",
+    slug: "acme",
+    status: "active",
+    ownerUserId: "user-1",
+    profile: { name: "Acme" },
+    labels: {},
+    settings: {},
+  });
+
+  assert.ok(decisionCache.tags.includes("decision:org:org-1"));
+  assert.ok(identityCache.tags.includes("effective-identity:org:org-1"));
+
+  decisionCache.tags.length = 0;
+  identityCache.tags.length = 0;
+
+  await profileStore.upsertGroup({
+    id: "group-1",
+    orgId: "org-1",
+    slug: "engineering",
+    name: "Engineering",
+    labels: {},
+  });
+
+  await profileStore.upsertMembership({
+    id: "m-1",
+    userId: "user-1",
+    orgId: "org-1",
+    role: "admin",
+    groupIds: ["group-1"],
+    labelsDelta: {},
+    createdAt: "2024-01-01T00:00:00.000Z",
+    updatedAt: "2024-01-01T00:00:00.000Z",
+  });
+
+  assert.ok(decisionCache.tags.includes("decision:user:user-1"));
+  assert.ok(decisionCache.tags.includes("decision:org:org-1"));
+  assert.ok(decisionCache.tags.includes("decision:group:group-1"));
+  assert.ok(identityCache.tags.includes("effective-identity:user:user-1"));
+  assert.ok(identityCache.tags.includes("effective-identity:membership:m-1"));
+  assert.ok(identityCache.tags.includes("effective-identity:group:group-1"));
+
+  decisionCache.tags.length = 0;
+  identityCache.tags.length = 0;
+
+  await profileStore.removeMembership("m-1");
+
+  assert.ok(decisionCache.tags.includes("decision:user:user-1"));
+  assert.ok(identityCache.tags.includes("effective-identity:membership:m-1"));
+});
+
+const createCacheCollector = () => {
+  const tags = [];
+  return {
+    tags,
+    async get() {
+      return undefined;
+    },
+    async set() {},
+    async delete() {},
+    async purgeByTag(tag) {
+      tags.push(tag);
+    },
+    async clear() {},
+  };
+};

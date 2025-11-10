@@ -36,4 +36,13 @@ export type {
   PostgresForwardAuthRuntime,
   PostgresForwardAuthConfig,
   CreatePostgresForwardAuthRuntimeOptions,
+  PostgresForwardAuthCacheOptions,
 } from "./postgres-runtime.js";
+export { createForwardAuthServer } from "./server.js";
+export type {
+  ForwardAuthServerOptions,
+  ForwardAuthServerMetrics,
+  CacheHealthCheck,
+  HealthCheckResponse,
+  CacheHealthStatus,
+} from "./server.js";

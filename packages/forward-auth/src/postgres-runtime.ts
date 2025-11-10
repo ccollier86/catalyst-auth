@@ -1,11 +1,17 @@
 import type { Pool } from "pg";
 
-import type { IdpAdapterPort, PolicyEnginePort } from "@catalyst-auth/contracts";
+import type {
+  CachePort,
+  EffectiveIdentity,
+  IdpAdapterPort,
+  PolicyEnginePort,
+} from "@catalyst-auth/contracts";
 import {
   createPostgresDataSource,
   createPostgresDataSourceFromPool,
   type CreatePostgresDataSourceOptions,
   type PostgresDataSource,
+  type PostgresCacheOptions,
 } from "@catalyst-auth/data-postgres";
 
 import { ForwardAuthService } from "./forward-auth-service.js";
@@ -25,6 +31,13 @@ export interface CreatePostgresForwardAuthRuntimeOptions {
   readonly pool?: Pool;
   readonly dataSourceOptions?: Omit<CreatePostgresDataSourceOptions, "pool">;
   readonly forwardAuth?: PostgresForwardAuthConfig;
+  readonly cache?: PostgresForwardAuthCacheOptions;
+}
+
+export interface PostgresForwardAuthCacheOptions {
+  readonly effectiveIdentityCache?: CachePort<EffectiveIdentity>;
+  readonly effectiveIdentityCacheKeyPrefix?: string;
+  readonly effectiveIdentityCacheTtlSeconds?: number;
 }
 
 export const createPostgresForwardAuthRuntime = (
@@ -51,13 +64,44 @@ const resolveDataSource = (
     return options.dataSource;
   }
 
+  const cacheOptions = mergeCacheOptions(options);
+
   if (options.pool) {
-    return createPostgresDataSourceFromPool(options.pool, options.dataSourceOptions);
+    return createPostgresDataSourceFromPool(options.pool, {
+      ...options.dataSourceOptions,
+      cacheOptions,
+    });
   }
 
   if (options.dataSourceOptions?.executor) {
-    return createPostgresDataSource(options.dataSourceOptions);
+    return createPostgresDataSource({
+      ...options.dataSourceOptions,
+      cacheOptions,
+    });
   }
 
   throw new Error("createPostgresForwardAuthRuntime requires a data source, pool, or executor");
+};
+
+const mergeCacheOptions = (
+  options: CreatePostgresForwardAuthRuntimeOptions,
+): PostgresCacheOptions | undefined => {
+  const base = options.dataSourceOptions?.cacheOptions;
+  const decisionCache = options.forwardAuth?.decisionCache ?? base?.decisionCache;
+  const effectiveIdentityCache = options.cache?.effectiveIdentityCache ?? base?.effectiveIdentityCache;
+  const effectiveIdentityCacheKeyPrefix =
+    options.cache?.effectiveIdentityCacheKeyPrefix ?? base?.effectiveIdentityCacheKeyPrefix;
+  const effectiveIdentityCacheTtlSeconds =
+    options.cache?.effectiveIdentityCacheTtlSeconds ?? base?.effectiveIdentityCacheTtlSeconds;
+
+  if (!decisionCache && !effectiveIdentityCache && !base) {
+    return undefined;
+  }
+
+  return {
+    decisionCache,
+    effectiveIdentityCache,
+    effectiveIdentityCacheKeyPrefix,
+    effectiveIdentityCacheTtlSeconds,
+  } satisfies PostgresCacheOptions;
 };

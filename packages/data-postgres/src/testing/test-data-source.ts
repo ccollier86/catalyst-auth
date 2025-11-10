@@ -9,10 +9,12 @@ import type { QueryExecutor } from "../executors/query-executor.js";
 import {
   createPostgresDataSource,
   type PostgresDataSource,
+  type CreatePostgresDataSourceOptions,
 } from "../postgres-data-source.js";
 import { postgresMigrations } from "../migrations/index.js";
 import { seedPostgresDataSource, type PostgresSeedData } from "../seeding/seed.js";
 import { resolvePostgresTableNames, type PostgresTableNames } from "../tables.js";
+import { createFallbackHarness } from "./fallback-query-executor.js";
 
 const migrationsDir = dirname(fileURLToPath(new URL("../migrations/", import.meta.url)));
 
@@ -35,15 +37,16 @@ const createPgMemExecutor = async (
   readonly dispose: () => Promise<void>;
   readonly listAuditEvents: () => Promise<ReadonlyArray<AuditEventRecord>>;
 }> => {
-  const { newDb } = await import("pg-mem");
-  const db = newDb({ autoCreateForeignKeyIndices: true });
-  await runMigrations(db);
-  const adapter = db.adapters.createPg();
-  const pool = new adapter.Pool();
-  const executor = createPgQueryExecutor(pool);
-  const listAuditEvents = async (): Promise<ReadonlyArray<AuditEventRecord>> => {
-    const { rows } = await executor.query<AuditEventRecord>(
-      `SELECT 
+  try {
+    const { newDb } = await import("pg-mem");
+    const db = newDb({ autoCreateForeignKeyIndices: true });
+    await runMigrations(db);
+    const adapter = db.adapters.createPg();
+    const pool = new adapter.Pool();
+    const executor = createPgQueryExecutor(pool);
+    const listAuditEvents = async (): Promise<ReadonlyArray<AuditEventRecord>> => {
+      const { rows } = await executor.query<AuditEventRecord>(
+        `SELECT
         id,
         occurred_at AS "occurredAt",
         category,
@@ -55,21 +58,34 @@ const createPgMemExecutor = async (
         correlation_id AS "correlationId"
       FROM ${tables.auditEvents}
       ORDER BY occurred_at ASC`,
-    );
-    return rows;
-  };
+      );
+      return rows;
+    };
 
-  return { executor, dispose: () => pool.end(), listAuditEvents };
+    return { executor, dispose: () => pool.end(), listAuditEvents };
+  } catch {
+    const fallback = createFallbackHarness(tables);
+    return {
+      executor: fallback.executor,
+      dispose: async () => {},
+      listAuditEvents: async () => fallback.listAuditEvents(),
+    };
+  }
 };
 
 export const createTestPostgresDataSource = async (
   seed?: PostgresSeedData,
+  options: Omit<CreatePostgresDataSourceOptions, "executor"> = {},
 ): Promise<TestPostgresDataSource> => {
-  const tables: PostgresTableNames = resolvePostgresTableNames();
+  const tables: PostgresTableNames = resolvePostgresTableNames(options.tables);
 
   const executorResult = await createPgMemExecutor(tables);
 
-  const dataSource = createPostgresDataSource({ executor: executorResult.executor, tables });
+  const dataSource = createPostgresDataSource({
+    ...options,
+    executor: executorResult.executor,
+    tables,
+  });
   if (seed) {
     await seedPostgresDataSource(dataSource, seed);
   }

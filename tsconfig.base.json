@@ -16,12 +16,19 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
+    "typeRoots": [
+      "./types",
+      "./node_modules/@types"
+    ],
     "paths": {
       "@catalyst-auth/authentik-client": [
         "packages/authentik-client/src/index.ts"
       ],
       "@catalyst-auth/cache-memory": [
         "packages/cache-memory/src/index.ts"
+      ],
+      "@catalyst-auth/cache-redis": [
+        "packages/cache-redis/src/index.ts"
       ],
       "@catalyst-auth/contracts": [
         "packages/contracts/src/index.ts"

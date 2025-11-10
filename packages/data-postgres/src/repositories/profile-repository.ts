@@ -1,4 +1,5 @@
 import type {
+  CachePort,
   EffectiveIdentity,
   EffectiveIdentityRequest,
   EntitlementSubjectKind,
@@ -13,12 +14,17 @@ import type {
 import type { PostgresTableNames } from "../tables.js";
 import type { QueryExecutor } from "../executors/query-executor.js";
 import { clone } from "../utils/clone.js";
+import { PostgresCacheInvalidator } from "../utils/cache-invalidation.js";
 
 interface ProfileTables
   extends Pick<PostgresTableNames, "users" | "orgs" | "groups" | "memberships" | "entitlements"> {}
 
 interface PostgresProfileStoreOptions {
   readonly tables?: ProfileTables;
+  readonly cacheInvalidator?: PostgresCacheInvalidator;
+  readonly identityCache?: CachePort<EffectiveIdentity>;
+  readonly identityCacheKeyPrefix?: string;
+  readonly identityCacheTtlSeconds?: number;
 }
 
 interface EntitlementSubject {
@@ -142,6 +148,10 @@ const toMembershipRecord = (row: MembershipRow): MembershipRecord => ({
 
 export class PostgresProfileStore implements ProfileStorePort {
   private readonly tables: ProfileTables;
+  private readonly cacheInvalidator?: PostgresCacheInvalidator;
+  private readonly identityCache?: CachePort<EffectiveIdentity>;
+  private readonly identityCacheKeyPrefix: string;
+  private readonly identityCacheTtlSeconds?: number;
 
   constructor(
     private readonly executor: QueryExecutor,
@@ -154,6 +164,10 @@ export class PostgresProfileStore implements ProfileStorePort {
       memberships: options.tables?.memberships ?? "auth_memberships",
       entitlements: options.tables?.entitlements ?? "auth_entitlements",
     };
+    this.cacheInvalidator = options.cacheInvalidator;
+    this.identityCache = options.identityCache;
+    this.identityCacheKeyPrefix = options.identityCacheKeyPrefix ?? "effective-identity";
+    this.identityCacheTtlSeconds = options.identityCacheTtlSeconds;
   }
 
   async getUserProfile(id: string): Promise<UserProfileRecord | undefined> {
@@ -201,7 +215,9 @@ export class PostgresProfileStore implements ProfileStorePort {
         profile.metadata ?? null,
       ],
     );
-    return toUserRecord(rows[0]);
+    const record = toUserRecord(rows[0]);
+    await this.cacheInvalidator?.invalidateUser(record.id);
+    return record;
   }
 
   async getOrgProfile(id: string): Promise<OrgProfileRecord | undefined> {
@@ -257,7 +273,9 @@ export class PostgresProfileStore implements ProfileStorePort {
         profile.settings,
       ],
     );
-    return toOrgRecord(rows[0]);
+    const record = toOrgRecord(rows[0]);
+    await this.cacheInvalidator?.invalidateOrg(record.id);
+    return record;
   }
 
   async listGroups(orgId: string): Promise<ReadonlyArray<GroupRecord>> {
@@ -299,14 +317,21 @@ export class PostgresProfileStore implements ProfileStorePort {
         group.labels ?? {},
       ],
     );
-    return toGroupRecord(rows[0]);
+    const record = toGroupRecord(rows[0]);
+    await this.cacheInvalidator?.invalidateGroups(record.orgId, [record.id]);
+    return record;
   }
 
   async deleteGroup(groupId: string): Promise<void> {
-    await this.executor.query(
-      `DELETE FROM ${this.tables.groups} WHERE id = $1`,
+    const { rows } = await this.executor.query<GroupRow>(
+      `DELETE FROM ${this.tables.groups} WHERE id = $1 RETURNING *`,
       [groupId],
     );
+    if (rows.length === 0) {
+      return;
+    }
+    const record = toGroupRecord(rows[0]);
+    await this.cacheInvalidator?.invalidateGroups(record.orgId, [record.id]);
   }
 
   async listMembershipsByUser(userId: string): Promise<ReadonlyArray<MembershipRecord>> {
@@ -359,14 +384,31 @@ export class PostgresProfileStore implements ProfileStorePort {
         membership.updatedAt,
       ],
     );
-    return toMembershipRecord(rows[0]);
+    const record = toMembershipRecord(rows[0]);
+    await this.cacheInvalidator?.invalidateMembership({
+      userId: record.userId,
+      orgId: record.orgId,
+      membershipId: record.id,
+      groupIds: record.groupIds,
+    });
+    return record;
   }
 
   async removeMembership(membershipId: string): Promise<void> {
-    await this.executor.query(
-      `DELETE FROM ${this.tables.memberships} WHERE id = $1`,
+    const { rows } = await this.executor.query<MembershipRow>(
+      `DELETE FROM ${this.tables.memberships} WHERE id = $1 RETURNING *`,
       [membershipId],
     );
+    if (rows.length === 0) {
+      return;
+    }
+    const record = toMembershipRecord(rows[0]);
+    await this.cacheInvalidator?.invalidateMembership({
+      userId: record.userId,
+      orgId: record.orgId,
+      membershipId: record.id,
+      groupIds: record.groupIds,
+    });
   }
 
   async computeEffectiveIdentity(request: EffectiveIdentityRequest): Promise<EffectiveIdentity> {
@@ -376,14 +418,31 @@ export class PostgresProfileStore implements ProfileStorePort {
     }
 
     const membership = await this.resolveMembership(request);
-    const orgId = request.orgId ?? membership?.orgId ?? user.primaryOrgId;
-    const org = orgId ? await this.getOrgProfile(orgId) : undefined;
+    const includeGroups = request.includeGroups !== false;
+    const resolvedOrgId = request.orgId ?? membership?.orgId ?? user.primaryOrgId;
+
+    const cacheKey = this.identityCache
+      ? this.buildIdentityCacheKey({
+          userId: user.id,
+          orgId: resolvedOrgId,
+          membershipId: membership?.id,
+          includeGroups,
+        })
+      : undefined;
+
+    if (cacheKey && this.identityCache) {
+      const cached = await this.identityCache.get(cacheKey);
+      if (cached) {
+        return clone(cached);
+      }
+    }
+
+    const org = resolvedOrgId ? await this.getOrgProfile(resolvedOrgId) : undefined;
 
     if (request.orgId && !org) {
       throw new Error(`Org profile ${request.orgId} not found`);
     }
 
-    const includeGroups = request.includeGroups !== false;
     const groups = includeGroups && membership?.groupIds?.length
       ? await this.fetchGroupsByIds(membership.groupIds)
       : [];
@@ -401,7 +460,7 @@ export class PostgresProfileStore implements ProfileStorePort {
       membershipId: membership?.id,
     });
 
-    return {
+    const identity: EffectiveIdentity = {
       userId: user.id,
       orgId: org?.id,
       groups: includeGroups ? dedupeStrings(groups.map((group) => group.id)) : [],
@@ -410,6 +469,59 @@ export class PostgresProfileStore implements ProfileStorePort {
       entitlements,
       scopes: [],
     };
+
+    await this.cacheIdentity(cacheKey, identity, {
+      userId: user.id,
+      orgId: org?.id,
+      membershipId: membership?.id,
+      groupIds: identity.groups,
+    });
+
+    return identity;
+  }
+
+  private buildIdentityCacheKey(context: {
+    readonly userId: string;
+    readonly orgId?: string;
+    readonly membershipId?: string;
+    readonly includeGroups: boolean;
+  }): string {
+    const parts = [
+      this.identityCacheKeyPrefix,
+      context.userId,
+      context.orgId ?? "none",
+      context.membershipId ?? "auto",
+      context.includeGroups ? "with-groups" : "no-groups",
+    ];
+    return parts.join(":");
+  }
+
+  private async cacheIdentity(
+    cacheKey: string | undefined,
+    identity: EffectiveIdentity,
+    context: { readonly userId: string; readonly orgId?: string; readonly membershipId?: string; readonly groupIds?: ReadonlyArray<string> },
+  ): Promise<void> {
+    if (!cacheKey || !this.identityCache) {
+      return;
+    }
+
+    const tags = new Set<string>([`effective-identity:user:${context.userId}`]);
+    if (context.orgId) {
+      tags.add(`effective-identity:org:${context.orgId}`);
+    }
+    if (context.membershipId) {
+      tags.add(`effective-identity:membership:${context.membershipId}`);
+    }
+    for (const groupId of context.groupIds ?? []) {
+      if (groupId) {
+        tags.add(`effective-identity:group:${groupId}`);
+      }
+    }
+
+    await this.identityCache.set(cacheKey, clone(identity), {
+      ttlSeconds: this.identityCacheTtlSeconds,
+      tags: Array.from(tags),
+    });
   }
 
   private async resolveMembership(

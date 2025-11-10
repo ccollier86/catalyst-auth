@@ -1,11 +1,13 @@
 import type {
   AuditLogPort,
+  CachePort,
   EntitlementStorePort,
   KeyStorePort,
   ProfileStorePort,
   SessionStorePort,
   WebhookDeliveryStorePort,
   WebhookSubscriptionStorePort,
+  EffectiveIdentity,
 } from "@catalyst-auth/contracts";
 import type { Pool } from "pg";
 
@@ -22,6 +24,7 @@ import {
 } from "./repositories/webhook-repository.js";
 import { PostgresTransactionManager } from "./transactions/transaction-manager.js";
 import { resolvePostgresTableNames, type PostgresTableNames } from "./tables.js";
+import { PostgresCacheInvalidator } from "./utils/cache-invalidation.js";
 
 export interface PostgresDataSource {
   readonly executor: QueryExecutor;
@@ -40,6 +43,14 @@ export interface CreatePostgresDataSourceOptions {
   readonly pool?: Pool;
   readonly executor?: QueryExecutor;
   readonly tables?: Partial<PostgresTableNames>;
+  readonly cacheOptions?: PostgresCacheOptions;
+}
+
+export interface PostgresCacheOptions {
+  readonly decisionCache?: CachePort;
+  readonly effectiveIdentityCache?: CachePort<EffectiveIdentity>;
+  readonly effectiveIdentityCacheKeyPrefix?: string;
+  readonly effectiveIdentityCacheTtlSeconds?: number;
 }
 
 export const createPostgresDataSource = (
@@ -56,8 +67,22 @@ export const createPostgresDataSource = (
     throw new Error("createPostgresDataSource requires a pool or query executor");
   }
 
-  const entitlementStore = createPostgresEntitlementStore(executor, { tables });
-  const profileStore = createPostgresProfileStore(executor, { tables });
+  const cacheInvalidator = new PostgresCacheInvalidator({
+    decisionCache: options.cacheOptions?.decisionCache,
+    effectiveIdentityCache: options.cacheOptions?.effectiveIdentityCache,
+  });
+
+  const profileStore = createPostgresProfileStore(executor, {
+    tables,
+    cacheInvalidator,
+    identityCache: options.cacheOptions?.effectiveIdentityCache,
+    identityCacheKeyPrefix: options.cacheOptions?.effectiveIdentityCacheKeyPrefix,
+    identityCacheTtlSeconds: options.cacheOptions?.effectiveIdentityCacheTtlSeconds,
+  });
+  const entitlementStore = createPostgresEntitlementStore(executor, {
+    tables,
+    cacheInvalidator,
+  });
   const keyStore = createPostgresKeyStore(executor, { tables });
   const auditLog = createPostgresAuditLog(executor, { tables });
   const sessionStore = createPostgresSessionStore(executor, { tables });

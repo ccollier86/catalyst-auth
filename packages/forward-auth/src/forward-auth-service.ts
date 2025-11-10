@@ -290,9 +290,22 @@ export class ForwardAuthService {
       headers: { ...headers },
       expiresAt: new Date(this.now().getTime() + this.decisionTtlSeconds * 1000).toISOString(),
     };
+    const tags = new Set<string>(["decision-jwt"]);
+    if (identity.userId) {
+      tags.add(`decision:user:${identity.userId}`);
+    }
+    if (identity.orgId) {
+      tags.add(`decision:org:${identity.orgId}`);
+    }
+    for (const groupId of identity.groups ?? []) {
+      if (groupId) {
+        tags.add(`decision:group:${groupId}`);
+      }
+    }
+
     await this.cache.set(this.cacheKey(decision.decisionJwt), cacheEntry, {
       ttlSeconds: this.decisionTtlSeconds,
-      tags: ["decision-jwt"],
+      tags: Array.from(tags),
     });
 
     await this.appendAuditEvent(decision.decisionJwt, identity, cacheEntry.expiresAt);
