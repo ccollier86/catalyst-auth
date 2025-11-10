@@ -57,6 +57,9 @@
       "@catalyst-auth/sdk": [
         "packages/sdk/src/index.ts"
       ],
+      "@catalyst-auth/telemetry": [
+        "packages/telemetry/src/index.ts"
+      ],
       "@catalyst-auth/ui-headless": [
         "packages/ui-headless/src/index.ts"
       ],

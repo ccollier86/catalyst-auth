@@ -13,7 +13,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@catalyst-auth/contracts": "^0.1.0"
+    "@catalyst-auth/contracts": "^0.1.0",
+    "@catalyst-auth/telemetry": "^0.1.0"
   },
   "devDependencies": {
     "vitest": "^1.6.0",

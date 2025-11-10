@@ -1,8 +1,14 @@
 import {
   createCatalystCounter,
   createCatalystHistogram,
+  createCatalystLogger,
+  getCatalystTracer,
+  runWithSpan,
+  SpanStatusCode,
   type CatalystInstrumentationOptions,
-} from "@catalyst-auth/contracts";
+  type CatalystLogger,
+  type CatalystTracer,
+} from "@catalyst-auth/telemetry";
 
 import { createForwardAuthFetchHandler } from "./forward-auth-fetch-handler.js";
 import type { ForwardAuthService } from "./forward-auth-service.js";
@@ -28,6 +34,8 @@ export interface ForwardAuthServerOptions {
   readonly healthPath?: string;
   readonly metrics?: ForwardAuthServerMetrics;
   readonly instrumentation?: CatalystInstrumentationOptions;
+  readonly tracer?: CatalystTracer;
+  readonly logger?: CatalystLogger;
   readonly routeAttribute?: string;
 }
 
@@ -46,27 +54,63 @@ export const createForwardAuthServer = (
   options: ForwardAuthServerOptions,
 ): ((request: Request) => Promise<Response>) => {
   const fetchHandler = createForwardAuthFetchHandler(options.service, options.fetchHandlerOptions);
-  const metrics = resolveMetrics(options.metrics, options.instrumentation);
+  const instrumentation = options.instrumentation ?? { name: "forward-auth" };
+  const metrics = resolveMetrics(options.metrics, instrumentation);
   const healthPath = options.healthPath ?? "/healthz";
   const cacheChecks = options.cacheHealthChecks ?? [];
   const routeAttribute = options.routeAttribute ?? "forward-auth";
+  const tracer = options.tracer ?? getCatalystTracer(instrumentation);
+  const logger = options.logger ?? createCatalystLogger({ name: instrumentation.name ?? "forward-auth" });
 
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
     if (normalizePath(url.pathname) === normalizePath(healthPath)) {
-      return handleHealthCheck(cacheChecks, metrics);
+      logger.debug("forward_auth.health_check", { route: routeAttribute });
+      return handleHealthCheck(cacheChecks, metrics, logger);
     }
 
     const start = performance.now();
     try {
-      const response = await fetchHandler(request);
-      recordRequestMetrics(metrics, {
-        durationMs: performance.now() - start,
-        status: response.status,
-        route: routeAttribute,
-      });
-      return response;
-    } catch (error) {
+      return await runWithSpan(
+        tracer,
+        "forward_auth.request",
+        async (span) => {
+          span.setAttribute("http.method", request.method ?? "GET");
+          span.setAttribute("http.target", url.pathname);
+          span.setAttribute("forward_auth.route", routeAttribute);
+
+          try {
+            const response = await fetchHandler(request);
+            span.setAttribute("http.status_code", response.status);
+            recordRequestMetrics(metrics, {
+              durationMs: performance.now() - start,
+              status: response.status,
+              route: routeAttribute,
+            });
+            logger.info("forward_auth.request_completed", {
+              route: routeAttribute,
+              status: response.status,
+            });
+            return response;
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            span.setStatus({ code: SpanStatusCode.ERROR, message });
+            span.recordException(error as Error);
+            span.setAttribute("http.status_code", 500);
+            logger.error("forward_auth.request_failed", {
+              route: routeAttribute,
+              error: message,
+            });
+            throw error;
+          }
+        },
+        {
+          attributes: {
+            "http.route": routeAttribute,
+          },
+        },
+      );
+    } catch {
       recordRequestMetrics(metrics, {
         durationMs: performance.now() - start,
         status: 500,
@@ -86,6 +130,7 @@ const normalizePath = (path: string): string => (path.endsWith("/") && path !== 
 const handleHealthCheck = async (
   checks: ReadonlyArray<CacheHealthCheck>,
   metrics: ForwardAuthServerMetrics,
+  logger: CatalystLogger,
 ): Promise<Response> => {
   const results: CacheHealthStatus[] = await Promise.all(
     checks.map(async (check) => {
@@ -104,6 +149,11 @@ const handleHealthCheck = async (
 
   const ok = results.every((result) => result.healthy);
   metrics.healthCheckCounter?.add(1, { status: ok ? "ok" : "error" });
+
+  logger.info("forward_auth.health_check_completed", {
+    ok,
+    unhealthyCaches: results.filter((result) => !result.healthy).map((result) => result.name),
+  });
 
   const responseBody: HealthCheckResponse = { ok, caches: results };
   return new Response(JSON.stringify(responseBody), {

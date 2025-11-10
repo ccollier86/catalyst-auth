@@ -10,6 +10,12 @@ import type {
   WebhookSubscriptionStorePort,
 } from "@catalyst-auth/contracts";
 
+import {
+  createSdkTelemetryContext,
+  instrumentSdkModule,
+  type CatalystSdkTelemetryOptions,
+} from "./shared/telemetry.js";
+
 import { createAuthModule } from "./auth/index.js";
 import type { AuthModule } from "./auth/index.js";
 import { createOrgsModule } from "./orgs/index.js";
@@ -64,21 +70,40 @@ export interface CatalystSdk {
   readonly me: MeModule;
 }
 
+export interface CatalystSdkOptions {
+  readonly telemetry?: CatalystSdkTelemetryOptions;
+}
+
 /**
  * Creates a Catalyst SDK instance backed by the provided dependencies.
  */
-export const createCatalystSdk = (deps: CatalystSdkDependencies): CatalystSdk => ({
-  auth: createAuthModule(deps),
-  orgs: createOrgsModule(deps),
-  profiles: createProfilesModule(deps),
-  keys: createKeysModule(deps),
-  entitlements: createEntitlementsModule(deps),
-  webhooks: createWebhooksModule(deps),
-  webhookSubscriptions: createWebhookSubscriptionsModule(deps),
-  webhookDeliveries: createWebhookDeliveriesModule(deps),
-  sessions: createSessionsModule(deps),
-  me: createMeModule(deps),
-});
+export const createCatalystSdk = (
+  deps: CatalystSdkDependencies,
+  options: CatalystSdkOptions = {},
+): CatalystSdk => {
+  const telemetry = createSdkTelemetryContext(options.telemetry);
+
+  return {
+    auth: instrumentSdkModule("auth", createAuthModule(deps), telemetry),
+    orgs: instrumentSdkModule("orgs", createOrgsModule(deps), telemetry),
+    profiles: instrumentSdkModule("profiles", createProfilesModule(deps), telemetry),
+    keys: instrumentSdkModule("keys", createKeysModule(deps), telemetry),
+    entitlements: instrumentSdkModule("entitlements", createEntitlementsModule(deps), telemetry),
+    webhooks: instrumentSdkModule("webhooks", createWebhooksModule(deps), telemetry),
+    webhookSubscriptions: instrumentSdkModule(
+      "webhook_subscriptions",
+      createWebhookSubscriptionsModule(deps),
+      telemetry,
+    ),
+    webhookDeliveries: instrumentSdkModule(
+      "webhook_deliveries",
+      createWebhookDeliveriesModule(deps),
+      telemetry,
+    ),
+    sessions: instrumentSdkModule("sessions", createSessionsModule(deps), telemetry),
+    me: instrumentSdkModule("me", createMeModule(deps), telemetry),
+  } satisfies CatalystSdk;
+};
 
 export type {
   AuthModule,
@@ -100,4 +125,6 @@ export type {
   WebhookDeliveryPort,
   WebhookSubscriptionStorePort,
   WebhookDeliveryStorePort,
+  CatalystSdkOptions,
+  CatalystSdkTelemetryOptions,
 };

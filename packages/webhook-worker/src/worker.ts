@@ -5,6 +5,7 @@ import {
   type WebhookDeliveryRecord,
   type WebhookDeliveryStatus,
 } from "@catalyst-auth/contracts";
+import { runWithSpan, type CatalystLogger } from "@catalyst-auth/telemetry";
 
 import { defaultHttpClient } from "./default-http-client.js";
 import { determineRetryDecision } from "./retry.js";
@@ -19,6 +20,11 @@ import type {
   WebhookStores,
   WorkerRunSummary,
 } from "./types.js";
+import {
+  createWebhookWorkerTelemetry,
+  type WebhookWorkerTelemetryContext,
+  type WebhookWorkerTelemetryOptions,
+} from "./telemetry.js";
 
 export interface WorkerProcessResult {
   readonly status: WebhookDeliveryStatus;
@@ -65,6 +71,7 @@ export interface WebhookDeliveryWorkerOptions {
   readonly httpClient?: HttpClient;
   readonly signatureGenerator?: SignatureGenerator;
   readonly logger?: Logger;
+  readonly telemetry?: WebhookWorkerTelemetryOptions;
 }
 
 export interface WorkerRunOptions {
@@ -76,47 +83,112 @@ export class WebhookDeliveryWorker {
   private readonly clock: Clock;
   private readonly httpClient: HttpClient;
   private readonly signatureGenerator: SignatureGenerator;
-  private readonly logger?: Logger;
+  private readonly logger: Logger;
+  private readonly telemetry: WebhookWorkerTelemetryContext;
+  private readonly instrumentationLogger: CatalystLogger;
 
   constructor(private readonly stores: WebhookStores, options: WebhookDeliveryWorkerOptions = {}) {
     this.clock = options.clock ?? defaultClock;
     this.httpClient = options.httpClient ?? defaultHttpClient;
     this.signatureGenerator = options.signatureGenerator ?? defaultSignatureGenerator;
-    this.logger = options.logger;
+    const telemetry = createWebhookWorkerTelemetry(options.telemetry);
+    this.telemetry = telemetry;
+    this.instrumentationLogger = telemetry.logger;
+    this.logger = options.logger ?? createLegacyLogger(telemetry.logger);
   }
 
   async runOnce(options: WorkerRunOptions = {}): Promise<Result<WorkerRunSummary, CatalystError>> {
-    const before = options.before ?? this.clock.now();
-    const pendingResult = await this.stores.deliveries.listPendingDeliveries({
-      before: before.toISOString(),
-      limit: options.limit,
-    });
+    const start = performance.now();
+    let outcome: "ok" | "error" = "ok";
 
-    if (!pendingResult.ok) {
-      return pendingResult;
-    }
+    try {
+      const result = await runWithSpan(
+        this.telemetry.tracer,
+        "webhook_worker.run_once",
+        async (span) => {
+          span.setAttribute("webhook.worker.limit", options.limit ?? 0);
+          if (options.before) {
+            span.setAttribute("webhook.worker.before", options.before.toISOString());
+          }
+          this.instrumentationLogger.debug("webhook.worker.run_once.start", {
+            limit: options.limit,
+            before: options.before?.toISOString(),
+          });
+          emitUserLog(this.logger, "debug", "webhook.worker.run_once.start", {
+            limit: options.limit,
+            before: options.before?.toISOString(),
+          });
 
-    let succeeded = 0;
-    let retried = 0;
-    let deadLettered = 0;
+          const before = options.before ?? this.clock.now();
+          const pendingResult = await this.stores.deliveries.listPendingDeliveries({
+            before: before.toISOString(),
+            limit: options.limit,
+          });
 
-    for (const delivery of pendingResult.value) {
-      const processResult = await this.processDeliveryRecord(delivery);
-      if (!processResult.ok) {
-        return processResult;
+          if (!pendingResult.ok) {
+            outcome = "error";
+            const errorContext = {
+              error: describeCatalystError(pendingResult.error),
+            } satisfies Record<string, unknown>;
+            logCatalyst(this.instrumentationLogger, "error", "webhook.worker.run_once.list_failed", errorContext);
+            emitUserLog(this.logger, "error", "webhook.worker.run_once.list_failed", errorContext);
+            return pendingResult;
+          }
+
+          let succeeded = 0;
+          let retried = 0;
+          let deadLettered = 0;
+
+          for (const delivery of pendingResult.value) {
+            const processResult = await this.processDeliveryRecord(delivery);
+            if (!processResult.ok) {
+              outcome = "error";
+              const errorContext = {
+                deliveryId: delivery.id,
+                error: describeCatalystError(processResult.error),
+              } satisfies Record<string, unknown>;
+              logCatalyst(this.instrumentationLogger, "error", "webhook.worker.delivery_failed", errorContext);
+              emitUserLog(this.logger, "error", "webhook.worker.delivery_failed", errorContext);
+              return processResult;
+            }
+
+            this.recordDeliveryOutcome(processResult.value, delivery.id);
+            succeeded += processResult.value.status === "succeeded" ? 1 : 0;
+            retried += processResult.value.status === "pending" ? 1 : 0;
+            deadLettered += processResult.value.status === "dead_lettered" ? 1 : 0;
+          }
+
+          const summary = {
+            total: pendingResult.value.length,
+            succeeded,
+            retried,
+            deadLettered,
+          } satisfies WorkerRunSummary;
+
+          this.instrumentationLogger.info("webhook.worker.run_once.completed", summary);
+          emitUserLog(this.logger, "info", "webhook.worker.run_once.completed", summary);
+          return ok(summary);
+        },
+        {
+          onError: (error) => {
+            outcome = "error";
+            const message = error instanceof Error ? error.message : String(error);
+            this.instrumentationLogger.error("webhook.worker.run_once.failed", { error: message });
+            emitUserLog(this.logger, "error", "webhook.worker.run_once.failed", { error: message });
+          },
+        },
+      );
+
+      if (!result.ok) {
+        outcome = "error";
       }
 
-      succeeded += processResult.value.status === "succeeded" ? 1 : 0;
-      retried += processResult.value.status === "pending" ? 1 : 0;
-      deadLettered += processResult.value.status === "dead_lettered" ? 1 : 0;
+      return result;
+    } finally {
+      const duration = performance.now() - start;
+      this.telemetry.metrics.runCounter.add(1, { outcome });
+      this.telemetry.metrics.runDuration.record(duration, { outcome });
     }
-
-    return ok({
-      total: pendingResult.value.length,
-      succeeded,
-      retried,
-      deadLettered,
-    });
   }
 
   async processDeliveryById(
@@ -129,11 +201,16 @@ export class WebhookDeliveryWorker {
 
     const record = deliveryResult.value;
     if (!record) {
-      this.logger?.warn?.("webhook.worker.delivery_missing", { deliveryId: id });
+      logCatalyst(this.instrumentationLogger, "warn", "webhook.worker.delivery_missing", { deliveryId: id });
+      emitUserLog(this.logger, "warn", "webhook.worker.delivery_missing", { deliveryId: id });
       return ok({ status: "not_found" } as const);
     }
 
-    return this.processDeliveryRecord(record);
+    const result = await this.processDeliveryRecord(record);
+    if (result.ok) {
+      this.recordDeliveryOutcome(result.value, record.id);
+    }
+    return result;
   }
 
   private async processDeliveryRecord(
@@ -160,6 +237,24 @@ export class WebhookDeliveryWorker {
     }
 
     return this.attemptDelivery({ delivery, subscription });
+  }
+
+  private recordDeliveryOutcome(result: WorkerProcessResult, deliveryId: string): void {
+    const message = DELIVERY_STATUS_MESSAGES[result.status] ?? DEFAULT_DELIVERY_MESSAGE;
+    const level = DELIVERY_STATUS_LOG_LEVEL[result.status] ?? "info";
+    const context = {
+      deliveryId,
+      subscriptionId: result.record.subscriptionId,
+      status: result.status,
+      attemptCount: result.record.attemptCount,
+      nextAttemptAt: result.nextAttemptAt,
+      deadLetterUri: result.deadLetterUri,
+      errorMessage: result.record.errorMessage ?? undefined,
+    } satisfies Record<string, unknown>;
+
+    this.telemetry.metrics.deliveryCounter.add(1, { status: result.status });
+    logCatalyst(this.instrumentationLogger, level, message, context);
+    emitUserLog(this.logger, level, message, context);
   }
 
   private async attemptDelivery(
@@ -212,12 +307,6 @@ export class WebhookDeliveryWorker {
           return updateResult;
         }
 
-        this.logger?.info?.("webhook.worker.delivery_succeeded", {
-          deliveryId: updateResult.value.id,
-          subscriptionId: context.subscription.id,
-          status: response.status,
-        });
-
         return ok({ status: "succeeded", record: updateResult.value });
       }
 
@@ -262,27 +351,12 @@ export class WebhookDeliveryWorker {
     }
 
     if (decision.shouldRetry) {
-      this.logger?.warn?.("webhook.worker.delivery_retry_scheduled", {
-        deliveryId: updateResult.value.id,
-        subscriptionId: context.subscription.id,
-        attemptNumber,
-        nextAttemptAt: decision.nextAttemptAt,
-        failureMessage,
-      });
       return ok({
         status: "pending",
         record: updateResult.value,
         nextAttemptAt: decision.nextAttemptAt,
       });
     }
-
-    this.logger?.error?.("webhook.worker.delivery_dead_lettered", {
-      deliveryId: updateResult.value.id,
-      subscriptionId: context.subscription.id,
-      attemptNumber,
-      deadLetterUri: decision.deadLetterUri,
-      failureMessage,
-    });
 
     return ok({
       status: "dead_lettered",
@@ -291,3 +365,84 @@ export class WebhookDeliveryWorker {
     });
   }
 }
+
+const DEFAULT_DELIVERY_MESSAGE = "webhook.worker.delivery_processed";
+
+const DELIVERY_STATUS_MESSAGES: Record<WebhookDeliveryStatus, string> = {
+  pending: "webhook.worker.delivery_retry_scheduled",
+  delivering: "webhook.worker.delivery_inflight",
+  succeeded: "webhook.worker.delivery_succeeded",
+  failed: "webhook.worker.delivery_failed",
+  dead_lettered: "webhook.worker.delivery_dead_lettered",
+};
+
+type LoggerLevel = "debug" | "info" | "warn" | "error";
+
+const DELIVERY_STATUS_LOG_LEVEL: Record<WebhookDeliveryStatus, LoggerLevel> = {
+  pending: "warn",
+  delivering: "info",
+  succeeded: "info",
+  failed: "error",
+  dead_lettered: "error",
+};
+
+const describeCatalystError = (error: CatalystError): string => {
+  if (typeof error === "object" && error !== null) {
+    const typed = error as { code?: string; message?: string };
+    if (typed.message) {
+      return typed.message;
+    }
+    if (typed.code) {
+      return typed.code;
+    }
+  }
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+};
+
+const emitUserLog = (
+  logger: Logger | undefined,
+  level: LoggerLevel,
+  message: string,
+  context?: Record<string, unknown>,
+): void => {
+  const fn = logger?.[level];
+  if (typeof fn === "function") {
+    fn.call(logger, message, context);
+  }
+};
+
+const logCatalyst = (
+  logger: CatalystLogger,
+  level: LoggerLevel,
+  message: string,
+  context?: Record<string, unknown>,
+): void => {
+  if (level === "debug") {
+    logger.debug(message, context);
+  } else if (level === "info") {
+    logger.info(message, context);
+  } else if (level === "warn") {
+    logger.warn(message, context);
+  } else {
+    logger.error(message, context);
+  }
+};
+
+const createLegacyLogger = (logger: CatalystLogger): Logger => ({
+  debug(message, context) {
+    logger.debug(message, context);
+  },
+  info(message, context) {
+    logger.info(message, context);
+  },
+  warn(message, context) {
+    logger.warn(message, context);
+  },
+  error(message, context) {
+    logger.error(message, context);
+  },
+});

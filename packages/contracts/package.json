@@ -13,6 +13,6 @@
     "test": "echo 'No tests configured for @catalyst-auth/contracts'"
   },
   "dependencies": {
-    "@opentelemetry/api": "^1.9.0"
+    "@catalyst-auth/telemetry": "^0.1.0"
   }
 }

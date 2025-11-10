@@ -15,6 +15,7 @@
   "dependencies": {
     "@catalyst-auth/contracts": "^0.1.0",
     "@catalyst-auth/data-postgres": "^0.1.0",
+    "@catalyst-auth/telemetry": "^0.1.0",
     "pg": "^8.11.5"
   }
 }
