@@ -18,3 +18,4 @@ export * from "./ports/tokens/token-service-port.js";
 export * from "./ports/audit/audit-log-port.js";
 export * from "./ports/sessions/session-store-port.js";
 export * from "./telemetry/metrics.js";
+export * from "./mcp/index.js";
