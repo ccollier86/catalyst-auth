@@ -1,0 +1,22 @@
+{
+  "name": "@catalyst-auth/example-elysia-forward-auth",
+  "private": true,
+  "scripts": {
+    "dev": "bun run --hot src/server.ts"
+  },
+  "dependencies": {
+    "@catalyst-auth/ui-admin": "^0.1.0",
+    "@catalyst-auth/ui-headless": "^0.1.0",
+    "@elysiajs/eden": "^0.8.1",
+    "elysia": "^1.0.21",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@tanstack/react-query": "^5.29.3",
+    "@types/react": "^18.2.79",
+    "@types/react-dom": "^18.2.25",
+    "typescript": "^5.4.5",
+    "vite": "^5.2.8"
+  }
+}

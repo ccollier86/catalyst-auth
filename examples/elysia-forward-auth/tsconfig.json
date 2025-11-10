@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "esnext",
+    "moduleResolution": "node",
+    "jsx": "react-jsx",
+    "types": ["bun-types"],
+    "esModuleInterop": true
+  },
+  "include": ["src/**/*.ts", "ui/**/*.ts", "ui/**/*.tsx"],
+  "exclude": ["node_modules"]
+}
