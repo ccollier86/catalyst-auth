@@ -20,9 +20,11 @@ import type {
   WorkerRunSummary,
 } from "./types.js";
 
-interface WorkerProcessResult {
+export interface WorkerProcessResult {
   readonly status: WebhookDeliveryStatus;
   readonly record: WebhookDeliveryRecord;
+  readonly nextAttemptAt?: string;
+  readonly deadLetterUri?: string;
 }
 
 const defaultClock: Clock = {
@@ -99,7 +101,7 @@ export class WebhookDeliveryWorker {
     let deadLettered = 0;
 
     for (const delivery of pendingResult.value) {
-      const processResult = await this.processDelivery(delivery);
+      const processResult = await this.processDeliveryRecord(delivery);
       if (!processResult.ok) {
         return processResult;
       }
@@ -117,7 +119,26 @@ export class WebhookDeliveryWorker {
     });
   }
 
-  private async processDelivery(delivery: WebhookDeliveryRecord): Promise<Result<WorkerProcessResult, CatalystError>> {
+  async processDeliveryById(
+    id: string,
+  ): Promise<Result<WorkerProcessResult | { readonly status: "not_found" }, CatalystError>> {
+    const deliveryResult = await this.stores.deliveries.getDelivery(id);
+    if (!deliveryResult.ok) {
+      return deliveryResult;
+    }
+
+    const record = deliveryResult.value;
+    if (!record) {
+      this.logger?.warn?.("webhook.worker.delivery_missing", { deliveryId: id });
+      return ok({ status: "not_found" } as const);
+    }
+
+    return this.processDeliveryRecord(record);
+  }
+
+  private async processDeliveryRecord(
+    delivery: WebhookDeliveryRecord,
+  ): Promise<Result<WorkerProcessResult, CatalystError>> {
     const subscriptionResult = await this.stores.subscriptions.getSubscription(delivery.subscriptionId);
     if (!subscriptionResult.ok) {
       return subscriptionResult;
@@ -248,7 +269,11 @@ export class WebhookDeliveryWorker {
         nextAttemptAt: decision.nextAttemptAt,
         failureMessage,
       });
-      return ok({ status: "pending", record: updateResult.value });
+      return ok({
+        status: "pending",
+        record: updateResult.value,
+        nextAttemptAt: decision.nextAttemptAt,
+      });
     }
 
     this.logger?.error?.("webhook.worker.delivery_dead_lettered", {
@@ -259,6 +284,10 @@ export class WebhookDeliveryWorker {
       failureMessage,
     });
 
-    return ok({ status: "dead_lettered", record: updateResult.value });
+    return ok({
+      status: "dead_lettered",
+      record: updateResult.value,
+      deadLetterUri: decision.deadLetterUri,
+    });
   }
 }

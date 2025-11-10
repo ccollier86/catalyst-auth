@@ -1,0 +1,20 @@
+{
+  "name": "@catalyst-auth/webhook-queue-redis",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b tsconfig.json",
+    "lint": "echo 'No lint configured for @catalyst-auth/webhook-queue-redis'",
+    "test": "echo 'No tests configured for @catalyst-auth/webhook-queue-redis'"
+  },
+  "dependencies": {
+    "@catalyst-auth/contracts": "^0.1.0",
+    "bullmq": "^5.8.0",
+    "ioredis": "^5.4.1"
+  }
+}

@@ -57,6 +57,10 @@ const createStores = ({ subscription, deliveries }) => {
       },
     },
     deliveries: {
+      async getDelivery(id) {
+        const record = deliveryRecords.get(id);
+        return ok(record ? { ...record } : undefined);
+      },
       async listPendingDeliveries({ before, limit }) {
         const cutoff = before ? new Date(before).getTime() : Number.POSITIVE_INFINITY;
         const results = [];
