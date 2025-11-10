@@ -25,6 +25,7 @@ import {
 import { PostgresTransactionManager } from "./transactions/transaction-manager.js";
 import { resolvePostgresTableNames, type PostgresTableNames } from "./tables.js";
 import { PostgresCacheInvalidator } from "./utils/cache-invalidation.js";
+import { createPostgresTelemetry, type PostgresTelemetryOptions } from "./telemetry.js";
 
 export interface PostgresDataSource {
   readonly executor: QueryExecutor;
@@ -44,6 +45,7 @@ export interface CreatePostgresDataSourceOptions {
   readonly executor?: QueryExecutor;
   readonly tables?: Partial<PostgresTableNames>;
   readonly cacheOptions?: PostgresCacheOptions;
+  readonly telemetry?: PostgresTelemetryOptions;
 }
 
 export interface PostgresCacheOptions {
@@ -57,10 +59,14 @@ export const createPostgresDataSource = (
   options: CreatePostgresDataSourceOptions,
 ): PostgresDataSource => {
   const tables = resolvePostgresTableNames(options.tables);
+  const telemetry = createPostgresTelemetry(options.telemetry);
+  telemetry.logger.info("postgres.datasource.ready", {
+    tables,
+  });
   let executor = options.executor;
 
   if (!executor && options.pool) {
-    executor = createPgQueryExecutor(options.pool);
+    executor = createPgQueryExecutor(options.pool, { telemetry });
   }
 
   if (!executor) {
@@ -88,7 +94,11 @@ export const createPostgresDataSource = (
   const sessionStore = createPostgresSessionStore(executor, { tables });
   const webhookSubscriptionStore = createPostgresWebhookSubscriptionStore(executor, { tables });
   const webhookDeliveryStore = createPostgresWebhookDeliveryStore(executor, { tables });
-  const transactionManager = new PostgresTransactionManager({ pool: options.pool, executor });
+  const transactionManager = new PostgresTransactionManager({
+    pool: options.pool,
+    executor,
+    telemetry,
+  });
 
   return {
     executor,
