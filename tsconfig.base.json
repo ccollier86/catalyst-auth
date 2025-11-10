@@ -26,6 +26,9 @@
       "@catalyst-auth/contracts": [
         "packages/contracts/src/index.ts"
       ],
+      "@catalyst-auth/data-postgres": [
+        "packages/data-postgres/src/index.ts"
+      ],
       "@catalyst-auth/forward-auth": [
         "packages/forward-auth/src/index.ts"
       ],
@@ -49,6 +52,9 @@
       ],
       "@catalyst-auth/webhook-memory": [
         "packages/webhook-memory/src/index.ts"
+      ],
+      "@catalyst-auth/webhook-worker": [
+        "packages/webhook-worker/src/index.ts"
       ]
     }
   },

@@ -7,9 +7,13 @@ export * from "./types/audit.js";
 
 export * from "./ports/cache/cache-port.js";
 export * from "./ports/profile/profile-store-port.js";
+export * from "./ports/entitlements/entitlement-store-port.js";
 export * from "./ports/policy/policy-engine-port.js";
 export * from "./ports/webhooks/webhook-delivery-port.js";
+export * from "./ports/webhooks/webhook-subscription-store-port.js";
+export * from "./ports/webhooks/webhook-delivery-store-port.js";
 export * from "./ports/idp/idp-adapter-port.js";
 export * from "./ports/keys/key-store-port.js";
 export * from "./ports/tokens/token-service-port.js";
 export * from "./ports/audit/audit-log-port.js";
+export * from "./ports/sessions/session-store-port.js";

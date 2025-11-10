@@ -11,9 +11,10 @@ import { z } from "../vendor/zod.js";
 
 import type { CatalystSdkDependencies } from "../index.js";
 import { createNotFoundError, createValidationError } from "../shared/errors.js";
+import { labelSetSchema } from "../shared/schemas.js";
 import { safeParse } from "../shared/validation.js";
 
-const labelSetSchema = z.record(z.union([z.string(), z.boolean(), z.number()]));
+const orgStatusValues = ["active", "suspended", "invited", "archived"] as const;
 
 const groupSchema: z.ZodType<GroupRecord> = z.object({
   id: z.string().min(1),
@@ -28,7 +29,7 @@ const groupSchema: z.ZodType<GroupRecord> = z.object({
 const orgProfileSchema: z.ZodType<OrgProfileRecord> = z.object({
   id: z.string().min(1),
   slug: z.string().min(1),
-  status: z.enum(["active", "suspended", "invited", "archived"]),
+  status: z.enum(orgStatusValues),
   ownerUserId: z.string().min(1),
   profile: z.object({
     name: z.string().min(1),
@@ -54,39 +55,75 @@ const membershipSchema: z.ZodType<MembershipRecord> = z.object({
   updatedAt: z.string().min(1),
 });
 
-const getOrgSchema = z.object({
+type GetOrgInput = {
+  readonly orgId: string;
+};
+
+const getOrgSchema: z.ZodType<GetOrgInput> = z.object({
   orgId: z.string().min(1),
 });
 
-const getOrgBySlugSchema = z.object({
+type GetOrgBySlugInput = {
+  readonly slug: string;
+};
+
+const getOrgBySlugSchema: z.ZodType<GetOrgBySlugInput> = z.object({
   slug: z.string().min(1),
 });
 
-const upsertOrgSchema = z.object({
+type UpsertOrgInput = {
+  readonly org: OrgProfileRecord;
+};
+
+const upsertOrgSchema: z.ZodType<UpsertOrgInput> = z.object({
   org: orgProfileSchema,
 });
 
-const listMembershipsSchema = z.object({
+type ListMembershipsInput = {
+  readonly orgId: string;
+};
+
+const listMembershipsSchema: z.ZodType<ListMembershipsInput> = z.object({
   orgId: z.string().min(1),
 });
 
-const upsertMembershipSchema = z.object({
+type UpsertMembershipInput = {
+  readonly membership: MembershipRecord;
+};
+
+const upsertMembershipSchema: z.ZodType<UpsertMembershipInput> = z.object({
   membership: membershipSchema,
 });
 
-const removeMembershipSchema = z.object({
+type RemoveMembershipInput = {
+  readonly membershipId: string;
+};
+
+const removeMembershipSchema: z.ZodType<RemoveMembershipInput> = z.object({
   membershipId: z.string().min(1),
 });
 
-const listGroupsSchema = z.object({
+type ListGroupsInput = {
+  readonly orgId: string;
+};
+
+const listGroupsSchema: z.ZodType<ListGroupsInput> = z.object({
   orgId: z.string().min(1),
 });
 
-const upsertGroupSchema = z.object({
+type UpsertGroupInput = {
+  readonly group: GroupRecord;
+};
+
+const upsertGroupSchema: z.ZodType<UpsertGroupInput> = z.object({
   group: groupSchema,
 });
 
-const deleteGroupSchema = z.object({
+type DeleteGroupInput = {
+  readonly groupId: string;
+};
+
+const deleteGroupSchema: z.ZodType<DeleteGroupInput> = z.object({
   groupId: z.string().min(1),
 });
 

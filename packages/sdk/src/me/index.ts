@@ -5,7 +5,14 @@ import type { CatalystSdkDependencies } from "../index.js";
 import { createValidationError } from "../shared/errors.js";
 import { safeParse } from "../shared/validation.js";
 
-const effectiveIdentitySchema = z.object({
+type EffectiveIdentityInput = {
+  readonly userId: string;
+  readonly orgId?: string | undefined;
+  readonly membershipId?: string | undefined;
+  readonly includeGroups?: boolean | undefined;
+};
+
+const effectiveIdentitySchema: z.ZodType<EffectiveIdentityInput> = z.object({
   userId: z.string().min(1),
   orgId: z.string().min(1).optional(),
   membershipId: z.string().min(1).optional(),
