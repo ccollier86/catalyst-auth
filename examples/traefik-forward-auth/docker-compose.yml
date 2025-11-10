@@ -1,0 +1,38 @@
+version: '3.9'
+
+services:
+  traefik:
+    image: traefik:v3.0
+    command:
+      - --providers.file.filename=/etc/traefik/traefik.yaml
+      - --entrypoints.web.address=:8080
+      - --entrypoints.dashboard.address=:8081
+      - --api.dashboard=true
+    ports:
+      - '8080:8080'
+      - '8081:8081'
+    volumes:
+      - ./traefik.yaml:/etc/traefik/traefik.yaml:ro
+    depends_on:
+      - next-app
+
+  next-app:
+    build:
+      context: ../nextjs-forward-auth
+    environment:
+      - NEXT_PUBLIC_CATALYST_BASE_URL=http://forward-auth:8787
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.app.rule=Host(`localhost`)
+      - traefik.http.routers.app.entrypoints=web
+      - traefik.http.middlewares.catalyst-forward-auth.forwardauth.address=http://forward-auth:8787/forward-auth
+      - traefik.http.routers.app.middlewares=catalyst-forward-auth
+
+  forward-auth:
+    image: ghcr.io/catalyst-auth/forward-auth:latest
+    environment:
+      - CATALYST_BASE_URL=${CATALYST_BASE_URL:-https://sandbox.catalyst.test}
+      - CATALYST_CLIENT_ID=${CATALYST_CLIENT_ID:-demo}
+      - CATALYST_CLIENT_SECRET=${CATALYST_CLIENT_SECRET:-demo}
+    ports:
+      - '8787:8787'

@@ -1,0 +1,24 @@
+http:
+  routers:
+    app:
+      entryPoints:
+        - web
+      rule: Host(`localhost`)
+      service: app
+      middlewares:
+        - catalyst-forward-auth
+
+  middlewares:
+    catalyst-forward-auth:
+      forwardAuth:
+        address: http://forward-auth:8787/forward-auth
+        trustForwardHeader: true
+
+  services:
+    app:
+      loadBalancer:
+        servers:
+          - url: http://next-app:3000
+
+api:
+  dashboard: true

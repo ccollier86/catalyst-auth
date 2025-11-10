@@ -54,6 +54,12 @@
       "@catalyst-auth/sdk": [
         "packages/sdk/src/index.ts"
       ],
+      "@catalyst-auth/ui-headless": [
+        "packages/ui-headless/src/index.ts"
+      ],
+      "@catalyst-auth/ui-admin": [
+        "packages/ui-admin/src/index.ts"
+      ],
       "@catalyst-auth/token-service": [
         "packages/token-service/src/index.ts"
       ],
