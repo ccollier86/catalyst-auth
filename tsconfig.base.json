@@ -60,6 +60,9 @@
       "@catalyst-auth/webhook-memory": [
         "packages/webhook-memory/src/index.ts"
       ],
+      "@catalyst-auth/webhook-queue-redis": [
+        "packages/webhook-queue-redis/src/index.ts"
+      ],
       "@catalyst-auth/webhook-worker": [
         "packages/webhook-worker/src/index.ts"
       ]
