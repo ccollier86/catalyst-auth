@@ -42,6 +42,9 @@
       "@catalyst-auth/key-memory": [
         "packages/key-memory/src/index.ts"
       ],
+      "@catalyst-auth/mcp-runner": [
+        "packages/mcp-runner/src/index.ts"
+      ],
       "@catalyst-auth/middleware": [
         "packages/middleware/src/index.ts"
       ],
@@ -65,6 +68,24 @@
       ],
       "@catalyst-auth/webhook-worker": [
         "packages/webhook-worker/src/index.ts"
+      ],
+      "commander": [
+        "types/commander.d.ts"
+      ],
+      "pg": [
+        "types/pg.d.ts"
+      ],
+      "yaml": [
+        "types/yaml.d.ts"
+      ],
+      "node:crypto": [
+        "types/node.d.ts"
+      ],
+      "node:fs/promises": [
+        "types/node.d.ts"
+      ],
+      "node:path": [
+        "types/node.d.ts"
       ]
     }
   },

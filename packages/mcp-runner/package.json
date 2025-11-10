@@ -1,0 +1,31 @@
+{
+  "name": "@catalyst-auth/mcp-runner",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "files": [
+    "dist",
+    "bin"
+  ],
+  "bin": {
+    "catalyst-mcp": "dist/bin/catalyst-mcp.js"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.json",
+    "lint": "echo 'No lint configured for @catalyst-auth/mcp-runner'",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@catalyst-auth/contracts": "^0.1.0",
+    "@catalyst-auth/sdk": "^0.1.0",
+    "commander": "^11.1.0",
+    "pg": "^8.11.5",
+    "yaml": "^2.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.7",
+    "pg-mem": "^3.0.5",
+    "vitest": "^1.6.0"
+  }
+}
