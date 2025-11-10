@@ -14,19 +14,42 @@ const sessionRecordSchema: z.ZodType<SessionRecord> = z.object({
   metadata: z.record(z.unknown()).optional(),
 });
 
-const getSessionSchema = z.object({
+type GetSessionInput = {
+  readonly sessionId: string;
+};
+
+const getSessionSchema: z.ZodType<GetSessionInput> = z.object({
   sessionId: z.string().min(1),
 });
 
-const listSessionsSchema = z.object({
+type ListSessionsInput = {
+  readonly userId: string;
+};
+
+const listSessionsSchema: z.ZodType<ListSessionsInput> = z.object({
   userId: z.string().min(1),
 });
 
-const createSessionSchema = z.object({
+type CreateSessionInput = {
+  readonly session: SessionRecord;
+};
+
+const createSessionSchema: z.ZodType<CreateSessionInput> = z.object({
   session: sessionRecordSchema,
 });
 
-const touchSessionSchema = z.object({
+type SessionTouchUpdatePayload = {
+  readonly lastSeenAt: string;
+  readonly factorsVerified?: ReadonlyArray<string> | undefined;
+  readonly metadata?: Record<string, unknown> | undefined;
+};
+
+type TouchSessionInput = {
+  readonly sessionId: string;
+  readonly update: SessionTouchUpdatePayload;
+};
+
+const touchSessionSchema: z.ZodType<TouchSessionInput> = z.object({
   sessionId: z.string().min(1),
   update: z.object({
     lastSeenAt: z.string().min(1),
@@ -35,7 +58,11 @@ const touchSessionSchema = z.object({
   }),
 });
 
-const deleteSessionSchema = z.object({
+type DeleteSessionInput = {
+  readonly sessionId: string;
+};
+
+const deleteSessionSchema: z.ZodType<DeleteSessionInput> = z.object({
   sessionId: z.string().min(1),
 });
 

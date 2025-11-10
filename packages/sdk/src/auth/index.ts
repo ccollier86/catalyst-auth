@@ -12,9 +12,17 @@ import { z } from "../vendor/zod.js";
 
 import type { CatalystSdkDependencies } from "../index.js";
 import { createNotFoundError, createOperationError, createValidationError } from "../shared/errors.js";
+import { labelSetSchema } from "../shared/schemas.js";
 import { safeParse } from "../shared/validation.js";
 
-const signInSchema = z.object({
+type SignInWithCodeInput = {
+  readonly code: string;
+  readonly redirectUri: string;
+  readonly clientId: string;
+  readonly codeVerifier?: string | undefined;
+};
+
+const signInSchema: z.ZodType<SignInWithCodeInput> = z.object({
   code: z.string().min(1),
   redirectUri: z.string().url(),
   clientId: z.string().min(1),
@@ -26,7 +34,12 @@ const signInSchema = z.object({
  */
 export type SignInWithCodeRequest = z.infer<typeof signInSchema>;
 
-const refreshSchema = z.object({
+type RefreshSessionInput = {
+  readonly refreshToken: string;
+  readonly clientId: string;
+};
+
+const refreshSchema: z.ZodType<RefreshSessionInput> = z.object({
   refreshToken: z.string().min(1),
   clientId: z.string().min(1),
 });
@@ -36,7 +49,12 @@ const refreshSchema = z.object({
  */
 export type RefreshSessionRequest = z.infer<typeof refreshSchema>;
 
-const verifySessionSchema = z.object({
+type VerifySessionInput = {
+  readonly userId: string;
+  readonly sessionId: string;
+};
+
+const verifySessionSchema: z.ZodType<VerifySessionInput> = z.object({
   userId: z.string().min(1),
   sessionId: z.string().min(1),
 });
@@ -53,17 +71,21 @@ export interface VerifySessionResult {
   readonly session: SessionDescriptor;
 }
 
-const signOutSchema = verifySessionSchema.extend({
+type SignOutInput = VerifySessionInput & { readonly accessToken?: string | undefined };
+
+const signOutSchema: z.ZodType<SignOutInput> = z.object({
+  userId: z.string().min(1),
+  sessionId: z.string().min(1),
   accessToken: z.string().min(1).optional(),
 });
 
-const decisionTokenSchema = z.object({
+const decisionTokenSchema: z.ZodType<MintDecisionJwtInput> = z.object({
   identity: z.object({
     userId: z.string().min(1),
     orgId: z.string().optional(),
     sessionId: z.string().optional(),
     groups: z.array(z.string()),
-    labels: z.record(z.union([z.string(), z.boolean(), z.number()])),
+    labels: labelSetSchema,
     roles: z.array(z.string()),
     entitlements: z.array(z.string()),
     scopes: z.array(z.string()),
@@ -73,7 +95,7 @@ const decisionTokenSchema = z.object({
     .object({
       type: z.string().optional(),
       id: z.string().optional(),
-      labels: z.record(z.union([z.string(), z.boolean(), z.number()])).optional(),
+      labels: labelSetSchema.optional(),
     })
     .optional(),
   environment: z.record(z.unknown()).optional(),
@@ -102,9 +124,7 @@ export interface AuthModule {
   readonly refreshSession: (request: RefreshSessionRequest) => Promise<Result<TokenPair, CatalystError>>;
   readonly verifySession: (request: VerifySessionRequest) => Promise<Result<VerifySessionResult, CatalystError>>;
   readonly signOut: (request: SignOutRequest) => Promise<Result<SignOutResult, CatalystError>>;
-  readonly issueDecisionToken: (
-    request: z.infer<typeof decisionTokenSchema>,
-  ) => Promise<Result<JwtDescriptor, CatalystError>>;
+  readonly issueDecisionToken: (request: MintDecisionJwtInput) => Promise<Result<JwtDescriptor, CatalystError>>;
 }
 
 const createSignIn = (deps: CatalystSdkDependencies): AuthModule["signInWithCode"] => async (request) => {
@@ -188,7 +208,7 @@ const createIssueDecisionToken = (
   if (!parsed.ok) {
     return parsed;
   }
-  return deps.tokenService.mintDecisionJwt(parsed.value as MintDecisionJwtInput);
+  return deps.tokenService.mintDecisionJwt(parsed.value);
 };
 
 /**

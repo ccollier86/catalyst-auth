@@ -3,37 +3,59 @@ import { z } from "../vendor/zod.js";
 
 import type { CatalystSdkDependencies } from "../index.js";
 import { createValidationError } from "../shared/errors.js";
+import { labelValueSchema } from "../shared/schemas.js";
 import { safeParse } from "../shared/validation.js";
 
-const subjectSchema = z.object({
-  kind: z.enum(["user", "org", "membership"]),
+type EntitlementSubject = {
+  readonly kind: "user" | "org" | "membership";
+  readonly id: string;
+};
+
+const entitlementSubjectKinds = ["user", "org", "membership"] as const;
+
+const subjectSchema: z.ZodType<EntitlementSubject> = z.object({
+  kind: z.enum(entitlementSubjectKinds),
   id: z.string().min(1),
 });
 
 const entitlementRecordSchema: z.ZodType<EntitlementRecord> = z.object({
   id: z.string().min(1),
-  subjectKind: z.enum(["user", "org", "membership"]),
+  subjectKind: z.enum(entitlementSubjectKinds),
   subjectId: z.string().min(1),
   entitlement: z.string().min(1),
   createdAt: z.string().min(1),
-  metadata: z
-    .record(z.union([z.string(), z.number(), z.boolean()]))
-    .optional(),
+  metadata: z.record(labelValueSchema).optional(),
 });
 
-const listEntitlementsSchema = z.object({
+type ListEntitlementsInput = {
+  readonly subject: EntitlementSubject;
+};
+
+const listEntitlementsSchema: z.ZodType<ListEntitlementsInput> = z.object({
   subject: subjectSchema,
 });
 
-const listEntitlementsForSubjectsSchema = z.object({
+type ListEntitlementsForSubjectsInput = {
+  readonly subjects: ReadonlyArray<EntitlementSubject>;
+};
+
+const listEntitlementsForSubjectsSchema: z.ZodType<ListEntitlementsForSubjectsInput> = z.object({
   subjects: z.array(subjectSchema).min(1),
 });
 
-const upsertEntitlementSchema = z.object({
+type UpsertEntitlementInput = {
+  readonly entitlement: EntitlementRecord;
+};
+
+const upsertEntitlementSchema: z.ZodType<UpsertEntitlementInput> = z.object({
   entitlement: entitlementRecordSchema,
 });
 
-const removeEntitlementSchema = z.object({
+type RemoveEntitlementInput = {
+  readonly id: string;
+};
+
+const removeEntitlementSchema: z.ZodType<RemoveEntitlementInput> = z.object({
   id: z.string().min(1),
 });
 

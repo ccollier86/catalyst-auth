@@ -155,6 +155,8 @@ class BooleanSchema extends BaseSchema<boolean> {
 }
 
 class ArraySchema<T> extends BaseSchema<ReadonlyArray<T>> {
+  private minLength?: number;
+
   constructor(private readonly inner: BaseSchema<T>) {
     super();
   }
@@ -162,6 +164,12 @@ class ArraySchema<T> extends BaseSchema<ReadonlyArray<T>> {
   safeParse(input: unknown, path: ReadonlyArray<string> = []): ParseResult<ReadonlyArray<T>> {
     if (!Array.isArray(input)) {
       return { success: false, error: new ZodError([{ path, message: "Expected array" }]) };
+    }
+    if (this.minLength !== undefined && input.length < this.minLength) {
+      return {
+        success: false,
+        error: new ZodError([{ path, message: `Expected at least ${this.minLength} items` }]),
+      };
     }
     const values: T[] = [];
     for (const [index, item] of input.entries()) {
@@ -172,6 +180,11 @@ class ArraySchema<T> extends BaseSchema<ReadonlyArray<T>> {
       values.push(result.data);
     }
     return { success: true, data: values };
+  }
+
+  min(length: number): ArraySchema<T> {
+    this.minLength = length;
+    return this;
   }
 }
 
@@ -191,17 +204,23 @@ class EnumSchema<T extends string> extends BaseSchema<T> {
   }
 }
 
-class UnionSchema<T> extends BaseSchema<T> {
-  constructor(private readonly options: ReadonlyArray<BaseSchema<T>>) {
+type AnySchema = BaseSchema<unknown>;
+type SchemaValue<TSchema extends AnySchema> = TSchema extends BaseSchema<infer TValue> ? TValue : never;
+type InferUnion<TSchemas extends ReadonlyArray<AnySchema>> = TSchemas[number] extends AnySchema
+  ? SchemaValue<TSchemas[number]>
+  : never;
+
+class UnionSchema<TSchemas extends ReadonlyArray<AnySchema>> extends BaseSchema<InferUnion<TSchemas>> {
+  constructor(private readonly options: TSchemas) {
     super();
   }
 
-  safeParse(input: unknown, path: ReadonlyArray<string> = []): ParseResult<T> {
+  safeParse(input: unknown, path: ReadonlyArray<string> = []): ParseResult<InferUnion<TSchemas>> {
     const issues: ZodErrorIssue[] = [];
     for (const option of this.options) {
       const result = option.safeParse(input, path);
       if (result.success) {
-        return result;
+        return result as ParseSuccess<InferUnion<TSchemas>>;
       }
       issues.push(...result.error.issues);
     }
@@ -246,9 +265,11 @@ class ObjectSchema<T extends Record<string, unknown>> extends BaseSchema<T> {
       return { success: false, error: new ZodError([{ path, message: "Expected object" }]) };
     }
     const output: Record<string, unknown> = {};
+    const inputRecord = input as Record<PropertyKey, unknown>;
     for (const key of Object.keys(this.shape) as Array<keyof T>) {
       const schema = this.shape[key];
-      const parsed = schema.safeParse((input as Record<string, unknown>)[key], [...path, String(key)]);
+      const value = inputRecord[key as PropertyKey];
+      const parsed = schema.safeParse(value, [...path, String(key)]);
       if (!parsed.success) {
         return parsed as ParseFailure;
       }
@@ -276,7 +297,7 @@ export interface ZNamespace {
   array: <T>(schema: BaseSchema<T>) => ArraySchema<T>;
   object: <T extends Record<string, unknown>>(shape: { [K in keyof T]: BaseSchema<T[K]> }) => ObjectSchema<T>;
   enum: <T extends string>(values: readonly T[]) => EnumSchema<T>;
-  union: <T>(schemas: ReadonlyArray<BaseSchema<T>>) => UnionSchema<T>;
+  union: <TSchemas extends ReadonlyArray<AnySchema>>(schemas: TSchemas) => UnionSchema<TSchemas>;
   record: <T>(schema?: BaseSchema<T>) => RecordSchema<T>;
   unknown: () => UnknownSchema;
 }
@@ -288,7 +309,7 @@ export const z: ZNamespace & { ZodType: typeof BaseSchema } = {
   array: <T>(schema: BaseSchema<T>) => new ArraySchema(schema),
   object: <T extends Record<string, unknown>>(shape: { [K in keyof T]: BaseSchema<T[K]> }) => new ObjectSchema(shape),
   enum: <T extends string>(values: readonly T[]) => new EnumSchema(values as T[]),
-  union: <T>(schemas: ReadonlyArray<BaseSchema<T>>) => new UnionSchema(schemas),
+  union: <TSchemas extends ReadonlyArray<AnySchema>>(schemas: TSchemas) => new UnionSchema(schemas),
   record: <T>(schema: BaseSchema<T> = new UnknownSchema() as BaseSchema<T>) => new RecordSchema(schema),
   unknown: () => new UnknownSchema(),
   ZodType: BaseSchema,
@@ -296,3 +317,11 @@ export const z: ZNamespace & { ZodType: typeof BaseSchema } = {
 
 export type ZodType<T> = BaseSchema<T>;
 export type ZodSchema<T> = BaseSchema<T>;
+
+type InferOutput<TSchema extends BaseSchema<unknown>> = TSchema extends BaseSchema<infer T> ? T : never;
+
+export namespace z {
+  export type infer<TSchema extends BaseSchema<unknown>> = InferOutput<TSchema>;
+  export type ZodType<T> = BaseSchema<T>;
+  export type ZodSchema<T> = BaseSchema<T>;
+}

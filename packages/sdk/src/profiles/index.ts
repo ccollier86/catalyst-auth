@@ -3,9 +3,14 @@ import { z } from "../vendor/zod.js";
 
 import type { CatalystSdkDependencies } from "../index.js";
 import { createNotFoundError, createValidationError } from "../shared/errors.js";
+import { labelSetSchema } from "../shared/schemas.js";
 import { safeParse } from "../shared/validation.js";
 
-const getUserSchema = z.object({
+type GetUserProfileInput = {
+  readonly userId: string;
+};
+
+const getUserSchema: z.ZodType<GetUserProfileInput> = z.object({
   userId: z.string().min(1),
 });
 
@@ -13,8 +18,6 @@ const getUserSchema = z.object({
  * Request payload for retrieving a user profile.
  */
 export type GetUserProfileRequest = z.infer<typeof getUserSchema>;
-
-const labelSetSchema = z.record(z.union([z.string(), z.boolean(), z.number()]));
 
 const userProfileSchema: z.ZodType<UserProfileRecord> = z.object({
   id: z.string().min(1),
@@ -27,7 +30,11 @@ const userProfileSchema: z.ZodType<UserProfileRecord> = z.object({
   metadata: z.record(z.unknown()).optional(),
 });
 
-const upsertUserSchema = z.object({
+type UpsertUserProfileInput = {
+  readonly profile: UserProfileRecord;
+};
+
+const upsertUserSchema: z.ZodType<UpsertUserProfileInput> = z.object({
   profile: userProfileSchema,
 });
 
