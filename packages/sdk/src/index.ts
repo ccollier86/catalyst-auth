@@ -6,6 +6,8 @@ import type {
   SessionStorePort,
   TokenServicePort,
   WebhookDeliveryPort,
+  WebhookDeliveryStorePort,
+  WebhookSubscriptionStorePort,
 } from "@catalyst-auth/contracts";
 
 import { createAuthModule } from "./auth/index.js";
@@ -20,6 +22,10 @@ import { createEntitlementsModule } from "./entitlements/index.js";
 import type { EntitlementsModule } from "./entitlements/index.js";
 import { createWebhooksModule } from "./webhooks/index.js";
 import type { WebhooksModule } from "./webhooks/index.js";
+import { createWebhookSubscriptionsModule } from "./webhook-subscriptions/index.js";
+import type { WebhookSubscriptionsModule } from "./webhook-subscriptions/index.js";
+import { createWebhookDeliveriesModule } from "./webhook-deliveries/index.js";
+import type { WebhookDeliveriesModule } from "./webhook-deliveries/index.js";
 import { createMeModule } from "./me/index.js";
 import type { MeModule } from "./me/index.js";
 import { createSessionsModule } from "./sessions/index.js";
@@ -36,6 +42,8 @@ export interface CatalystSdkDependencies {
   readonly entitlementStore: EntitlementStorePort;
   readonly sessionStore: SessionStorePort;
   readonly webhookDelivery: WebhookDeliveryPort;
+  readonly webhookSubscriptionStore: WebhookSubscriptionStorePort;
+  readonly webhookDeliveryStore: WebhookDeliveryStorePort;
   readonly tokenService: TokenServicePort;
 }
 
@@ -50,6 +58,8 @@ export interface CatalystSdk {
   readonly keys: KeysModule;
   readonly entitlements: EntitlementsModule;
   readonly webhooks: WebhooksModule;
+  readonly webhookSubscriptions: WebhookSubscriptionsModule;
+  readonly webhookDeliveries: WebhookDeliveriesModule;
   readonly sessions: SessionsModule;
   readonly me: MeModule;
 }
@@ -64,6 +74,8 @@ export const createCatalystSdk = (deps: CatalystSdkDependencies): CatalystSdk =>
   keys: createKeysModule(deps),
   entitlements: createEntitlementsModule(deps),
   webhooks: createWebhooksModule(deps),
+  webhookSubscriptions: createWebhookSubscriptionsModule(deps),
+  webhookDeliveries: createWebhookDeliveriesModule(deps),
   sessions: createSessionsModule(deps),
   me: createMeModule(deps),
 });
@@ -77,6 +89,8 @@ export type {
   EntitlementsModule,
   SessionsModule,
   WebhooksModule,
+  WebhookSubscriptionsModule,
+  WebhookDeliveriesModule,
   EntitlementStorePort,
   IdpAdapterPort,
   KeyStorePort,
@@ -84,4 +98,6 @@ export type {
   SessionStorePort,
   TokenServicePort,
   WebhookDeliveryPort,
+  WebhookSubscriptionStorePort,
+  WebhookDeliveryStorePort,
 };
